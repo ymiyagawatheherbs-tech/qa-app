@@ -52,6 +52,7 @@
   .b-amber{background:var(--amber-bg);color:var(--amber)}
   .b-rose{background:var(--rose-bg);color:var(--rose)}
   .b-slate{background:#e2e8f0;color:#475569}
+  .b-sky{background:#e0f2fe;color:#0369a1}
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
   .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
   .kpi .n{font-size:22px;font-weight:700}.kpi .l{font-size:12px;color:var(--sub)}
@@ -310,38 +311,58 @@ async function saveRevision(formId,btn){
 // ===================================================================
 // 容器試験管理
 // ===================================================================
-let REQUESTS=[], RESULTS=[], testTab="results", testQ="";
+let REQUESTS=[], RESULTS=[], testTab="results", testQ="", curResultId=null, curRequestId=null;
 function jBadge(v){ if(v==="適")return `<span class="badge b-green">適</span>`; if(v==="不適")return `<span class="badge b-rose">不適</span>`; return `<span class="badge b-slate">未判定</span>`; }
+function tStatusBadge(s){ return s==="検査中" ? `<span class="badge b-sky">検査中</span>` : `<span class="badge b-slate">完了</span>`; }
+function addDays(iso,n){ const d=new Date(iso); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function addMonths(iso,n){ const d=new Date(iso||TODAY); if(isNaN(d)) return null; d.setMonth(d.getMonth()+n); return d.toISOString().slice(0,10); }
+
 async function loadTests(){
   $("view").innerHTML=`<p class="muted">読み込み中…</p>`;
   const [r1,r2]=await Promise.all([
-    db.from("test_results").select("*").order("report_date",{ascending:false,nullsFirst:false}),
+    db.from("test_results").select("*, test_checkpoints(*)").order("report_date",{ascending:false,nullsFirst:false}),
     db.from("test_requests").select("*, test_request_items(*)").order("request_date",{ascending:false,nullsFirst:false})
   ]);
   if(r1.error||r2.error){ $("view").innerHTML=`<div class="note">読み込みエラー：${esc((r1.error||r2.error).message)}</div>`; return; }
   RESULTS=r1.data; REQUESTS=r2.data; renderTests();
 }
 function renderTests(){
-  const reqByNo=n=>REQUESTS.find(x=>x.request_no===n);
   const resByReq=n=>RESULTS.filter(x=>x.request_no&&x.request_no===n);
-  const matched=RESULTS.filter(r=>r.request_no&&reqByNo(r.request_no)).length;
+  const reqByNo=n=>REQUESTS.find(x=>x.request_no===n);
+  // リマインダー：未完了チェックポイント
+  const checks=[];
+  RESULTS.forEach(r=>(r.test_checkpoints||[]).forEach(c=>{ if(!c.done) checks.push({...c,_r:r}); }));
+  checks.sort((a,b)=>(a.due_date||"").localeCompare(b.due_date||""));
+  const soonLimit=addDays(TODAY,30);
+  const due=checks.filter(c=>c.due_date && c.due_date<=soonLimit);
+  const inspecting=RESULTS.filter(r=>r.status==="検査中").length;
   const q=testQ.toLowerCase();
+
+  const remHtml = due.length ? `<div class="card" style="margin-bottom:14px;border-color:#fde68a">
+    <div style="padding:10px 12px;font-weight:600;background:#fffbeb;border-bottom:1px solid #fde68a">⏰ 次のチェック（30日以内・超過分）</div>
+    ${due.map(c=>{ const od=c.due_date<TODAY;
+      return `<div onclick="openResult('${esc(c._r.id)}')" style="display:flex;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--line2);cursor:pointer">
+        <span style="width:110px;${od?'color:var(--rose);font-weight:600':''}">${esc(c.due_date)}${od?' 超過':''}</span>
+        <span style="flex:1">${esc(c._r.subject)} <span class="muted">/ ${esc(c.label||"")}</span></span>
+        ${tStatusBadge(c._r.status)}</div>`;}).join("")}
+  </div>` : "";
+
   let body="";
   if(testTab==="results"){
-    const rows=RESULTS.filter(r=>!q||(((r.result_no||"")+ (r.request_no||"")+ (r.subject||"")+(r.sample||"")).toLowerCase().includes(q)))
-      .map(r=>`<tr class="click" onclick="openResult(${r.result_no??'null'},'${esc(r.id)}')">
+    const rows=RESULTS.filter(r=>!q||(((r.result_no||"")+(r.request_no||"")+(r.subject||"")+(r.sample||"")).toLowerCase().includes(q)))
+      .map(r=>`<tr class="click" onclick="openResult('${esc(r.id)}')">
         <td style="font-weight:600">${esc(r.result_no??"")}</td><td>${esc(r.subject)}</td>
         <td class="muted">${r.request_no?esc(r.request_no):'<span class="muted">未記入</span>'}</td>
-        <td class="muted">${esc(r.report_date||"")}</td><td>${jBadge(r.judgment)}</td></tr>`).join("");
-    body=`<div class="card"><table><thead><tr><th>NO</th><th>件名</th><th>依頼番号</th><th>報告日</th><th>判定</th></tr></thead>
-      <tbody>${rows||`<tr><td colspan=5 class="muted" style="text-align:center;padding:30px">該当なし</td></tr>`}</tbody></table></div>`;
+        <td class="muted">${esc(r.report_date||"")}</td><td>${tStatusBadge(r.status)}</td><td>${jBadge(r.judgment)}</td></tr>`).join("");
+    body=`<div class="card"><table><thead><tr><th>NO</th><th>件名</th><th>依頼番号</th><th>報告日</th><th>状態</th><th>判定</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan=6 class="muted" style="text-align:center;padding:30px">該当なし</td></tr>`}</tbody></table></div>`;
   } else {
-    const rows=REQUESTS.filter(r=>!q||((r.request_no+ (r.request_content||"")+(r.target||"")+(r.product_name||"")).toLowerCase().includes(q)))
+    const rows=REQUESTS.filter(r=>!q||((r.request_no+(r.request_content||"")+(r.target||"")+(r.product_name||"")).toLowerCase().includes(q)))
       .map(r=>{ const lk=resByReq(r.request_no);
         return `<tr class="click" onclick="openRequest('${esc(r.id)}')">
         <td style="font-weight:600">${esc(r.request_no)}</td><td>${esc(r.request_content)}</td>
         <td class="muted">${esc(r.target||"")}</td><td class="muted">${esc(r.request_date||"")}</td>
-        <td>${lk.length?jBadge(lk[0].judgment):'<span class="muted">未実施</span>'}</td></tr>`; }).join("");
+        <td>${lk.length?(lk[0].status==="検査中"?tStatusBadge("検査中"):jBadge(lk[0].judgment)):'<span class="muted">未実施</span>'}</td></tr>`; }).join("");
     body=`<div class="card"><table><thead><tr><th>依頼番号</th><th>依頼内容</th><th>対象物</th><th>依頼日</th><th>結果</th></tr></thead>
       <tbody>${rows||`<tr><td colspan=5 class="muted" style="text-align:center;padding:30px">該当なし</td></tr>`}</tbody></table></div>`;
   }
@@ -349,9 +370,10 @@ function renderTests(){
     <div class="kpis">
       <div class="kpi"><div class="n">${REQUESTS.length}</div><div class="l">試験依頼</div></div>
       <div class="kpi"><div class="n">${RESULTS.length}</div><div class="l">試験結果</div></div>
-      <div class="kpi"><div class="n">${RESULTS.filter(r=>r.judgment==="不適").length}</div><div class="l">不適あり</div></div>
-      <div class="kpi"><div class="n">${matched}</div><div class="l">依頼と突合済</div></div>
+      <div class="kpi"><div class="n">${inspecting}</div><div class="l">検査中</div></div>
+      <div class="kpi"><div class="n">${due.length}</div><div class="l">要チェック</div></div>
     </div>
+    ${remHtml}
     <div class="toolbar">
       <div style="display:flex;gap:4px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px">
         <button class="btn ${testTab==='results'?'btn-pri':'btn-ghost'}" style="border:none;padding:6px 12px" onclick="testTab='results';renderTests()">試験結果</button>
@@ -362,15 +384,22 @@ function renderTests(){
     </div>${body}`;
   const tq=$("tq"); if(tq){ tq.focus(); tq.setSelectionRange(tq.value.length,tq.value.length); }
 }
-function openResult(no,id){
-  const r=RESULTS.find(x=>x.id===id); if(!r)return; const req=REQUESTS.find(x=>x.request_no===r.request_no);
+
+function openResult(id){
+  const r=RESULTS.find(x=>x.id===id); if(!r)return; curResultId=id;
+  const req=REQUESTS.find(x=>x.request_no===r.request_no);
+  const cks=(r.test_checkpoints||[]).slice().sort((a,b)=>(a.due_date||"").localeCompare(b.due_date||""));
   $("view").innerHTML=`<button class="back" onclick="loadTests()">← 一覧へ戻る</button>
     <div class="detail">
       <div class="muted">容器試験結果報告書 NO.${esc(r.result_no??"")} ／ ${esc(r.gmp_no||"GMP No.9-13")}</div>
       <div style="display:flex;justify-content:space-between;align-items:start;gap:12px">
-        <strong style="font-size:16px">${esc(r.subject)}</strong>${jBadge(r.judgment)}</div>
+        <strong style="font-size:16px">${esc(r.subject)}</strong>
+        <div style="display:flex;gap:6px;align-items:center">${tStatusBadge(r.status)} ${jBadge(r.judgment)}</div></div>
       <div class="muted">報告日 ${esc(r.report_date||"")} ／ 作成者 ${esc(r.author||"")}</div>
-      ${r.request_no?`<div style="margin-top:10px"><button class="btn btn-ghost" style="border-color:#a7f3d0;background:#ecfdf5;color:var(--green-d)" onclick="${req?`openRequest('${esc(req.id)}')`:'void 0'}">🔗 依頼 ${esc(r.request_no)}${req?`（${esc(req.request_content)}）`:'（依頼ログに該当なし）'}</button></div>`:''}
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        ${r.request_no?`<button class="btn btn-ghost" style="border-color:#a7f3d0;background:#ecfdf5;color:var(--green-d)" onclick="${req?`openRequest('${esc(req.id)}')`:'void 0'}">🔗 依頼 ${esc(r.request_no)}${req?`（${esc(req.request_content)}）`:'（該当なし）'}</button>`:""}
+        ${canEdit()?`<button class="btn btn-ghost" onclick="editResultModal('${esc(id)}')">✎ 内容を編集</button>`:""}
+      </div>
       <div style="margin-top:14px">
         <div class="row"><span class="k">実施日</span><span>${esc(r.test_period||"")}</span></div>
         <div class="row"><span class="k">試験品</span><span>${esc(r.sample||"")}</span></div>
@@ -378,16 +407,95 @@ function openResult(no,id){
         <div class="row"><span class="k">結果</span><span>${esc(r.result||"")}</span></div>
         <div class="row"><span class="k">考察</span><span>${esc(r.discussion||"")}</span></div>
         <div class="row"><span class="k">添付資料</span><span>${esc(r.attachments||"")}</span></div>
-      </div></div>`;
+      </div>
+    </div>
+    <div class="detail" style="margin-top:14px">
+      <div style="font-weight:600;margin-bottom:10px">次回チェックポイント</div>
+      ${cks.length?cks.map(c=>{ const od=!c.done&&c.due_date<TODAY;
+        return `<div class="ver ${c.done?'old':''}" style="${od?'border-color:#fecaca;background:#fff1f2':''}"><div style="flex:1">
+          <div>${esc(c.label||"チェック")} ・ <span style="${od?'color:var(--rose);font-weight:600':''}">${esc(c.due_date)}</span>
+            ${c.done?'<span class="badge b-slate">完了</span>':od?'<span class="badge b-rose">期限超過</span>':'<span class="badge b-amber">予定</span>'}</div>
+          ${c.observation?`<div class="muted" style="margin-top:3px">メモ：${esc(c.observation)}</div>`:""}
+        </div>${(!c.done&&canEdit())?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="toggleCheckpoint('${esc(c.id)}')">完了にする</button>`:""}</div>`;
+      }).join(""):`<div class="muted">チェックポイントはありません。</div>`}
+      ${canEdit()?`<div class="note" style="margin-top:10px">
+        <div style="margin-bottom:6px">次の点検予定を追加（報告日 ${esc(r.report_date||TODAY)} を起点とした目安）：</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+          ${[1,3,5,6,9,12].map(n=>`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="quickAdd('${esc(id)}',${n})">+${n===12?'1年':n+'ヶ月'}</button>`).join("")}
+        </div>
+        <div style="display:flex;gap:8px;align-items:end">
+          <div style="flex:1"><label>ラベル</label><input id="ck_label" placeholder="例：3ヶ月後"></div>
+          <div><label>点検予定日</label><input id="ck_due" type="date"></div>
+          <button class="btn btn-pri" onclick="addCheckpoint('${esc(id)}')">追加</button>
+        </div></div>`:""}
+    </div>`;
 }
+async function reopenResult(id){ await loadTests(); openResult(id); }
+async function quickAdd(resultId,n){
+  const r=RESULTS.find(x=>x.id===resultId); const base=r&&r.report_date?r.report_date:TODAY;
+  const due=addMonths(base,n); const label=(n===12?"1年後":n+"ヶ月後");
+  const { error }=await db.from("test_checkpoints").insert({result_id:resultId,label,due_date:due,done:false});
+  if(error){ alert("追加できません："+error.message); return; }
+  await reopenResult(resultId);
+}
+async function addCheckpoint(resultId){
+  const label=$("ck_label").value.trim(); const due=$("ck_due").value;
+  if(!due){ alert("点検予定日を入力してください"); return; }
+  const { error }=await db.from("test_checkpoints").insert({result_id:resultId,label:label||"チェック",due_date:due,done:false});
+  if(error){ alert("追加できません："+error.message); return; }
+  await reopenResult(resultId);
+}
+async function toggleCheckpoint(cid){
+  const obs=prompt("点検結果のメモ（任意・空欄可）","");
+  if(obs===null) return;
+  const { error }=await db.from("test_checkpoints").update({done:true,observation:obs||null}).eq("id",cid);
+  if(error){ alert("更新できません："+error.message); return; }
+  await reopenResult(curResultId);
+}
+function editResultModal(id){
+  const r=RESULTS.find(x=>x.id===id); if(!r)return;
+  modal(`<h3>結果を編集 ― NO.${esc(r.result_no??"")}</h3><div class="body">
+    <label>件名</label><input id="er_subject" value="${esc(r.subject||"")}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>状態</label><select id="er_status"><option ${r.status==="検査中"?"selected":""}>検査中</option><option ${r.status!=="検査中"?"selected":""}>完了</option></select></div>
+      <div><label>判定</label><select id="er_judg"><option value="" ${!r.judgment?"selected":""}>未判定</option><option ${r.judgment==="適"?"selected":""}>適</option><option ${r.judgment==="不適"?"selected":""}>不適</option></select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼番号</label><input id="er_req" value="${esc(r.request_no||"")}"></div>
+      <div><label>報告日</label><input id="er_date" value="${esc(r.report_date||"")}"></div></div>
+    <label>作成者</label><input id="er_author" value="${esc(r.author||"")}">
+    <label>実施日</label><input id="er_period" value="${esc(r.test_period||"")}">
+    <label>試験品</label><textarea id="er_sample" rows="2">${esc(r.sample||"")}</textarea>
+    <label>試験方法</label><textarea id="er_method" rows="2">${esc(r.method||"")}</textarea>
+    <label>結果</label><textarea id="er_result" rows="3">${esc(r.result||"")}</textarea>
+    <label>考察</label><textarea id="er_disc" rows="2">${esc(r.discussion||"")}</textarea>
+    <label>添付資料</label><input id="er_attach" value="${esc(r.attachments||"")}">
+    <div class="err" id="er_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-pri" onclick="saveResultEdit('${esc(id)}',this)">保存</button></div>`);
+}
+async function saveResultEdit(id,btn){
+  btn.disabled=true; const judg=$("er_judg").value;
+  const { error }=await db.from("test_results").update({
+    subject:$("er_subject").value.trim(), status:$("er_status").value, judgment:judg||null,
+    request_no:$("er_req").value.trim()||null, report_date:$("er_date").value.trim()||null,
+    author:$("er_author").value.trim(), test_period:$("er_period").value.trim(),
+    sample:$("er_sample").value.trim(), method:$("er_method").value.trim(),
+    result:$("er_result").value.trim(), discussion:$("er_disc").value.trim(), attachments:$("er_attach").value.trim()
+  }).eq("id",id);
+  if(error){ $("er_err").textContent="保存できません："+error.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await reopenResult(id);
+}
+
 function openRequest(id){
-  const r=REQUESTS.find(x=>x.id===id); if(!r)return;
+  const r=REQUESTS.find(x=>x.id===id); if(!r)return; curRequestId=id;
   const linked=RESULTS.filter(x=>x.request_no===r.request_no);
   const items=(r.test_request_items||[]);
   $("view").innerHTML=`<button class="back" onclick="loadTests()">← 一覧へ戻る</button>
     <div class="detail">
       <div class="muted">容器試験依頼書 ／ 依頼番号 ${esc(r.request_no)}</div>
       <strong style="font-size:16px">${esc(r.request_content)}</strong>
+      ${canEdit()?`<div style="margin-top:8px"><button class="btn btn-ghost" onclick="editRequestModal('${esc(r.id)}')">✎ 内容を編集</button></div>`:""}
       <div style="margin-top:8px">
         <div class="row"><span class="k">対象物</span><span>${esc(r.target||"—")}</span></div>
         <div class="row"><span class="k">製品 / Lot</span><span>${esc([r.product_name,r.lot_no].filter(Boolean).join(" / ")||"—")}</span></div>
@@ -397,8 +505,34 @@ function openRequest(id){
       ${items.length?`<div class="card"><table><thead><tr><th>種別</th><th>品名・型番</th><th>手配先</th></tr></thead><tbody>
         ${items.map(i=>`<tr><td class="muted">${esc(i.kind)}</td><td>${esc(i.material||"")}</td><td class="muted">${esc(i.supplier||"")}</td></tr>`).join("")}</tbody></table></div>`:`<div class="muted">資材の登録はありません</div>`}
       <div style="font-weight:600;margin:16px 0 8px">この依頼の試験結果</div>
-      ${linked.length?linked.map(x=>`<div class="ver" style="cursor:pointer" onclick="openResult(${x.result_no??'null'},'${esc(x.id)}')"><div style="flex:1">NO.${esc(x.result_no??"")} ${esc(x.subject)}</div>${jBadge(x.judgment)}</div>`).join(""):`<div class="note">まだ結果が登録されていません（試験未実施）。</div>`}
+      ${linked.length?linked.map(x=>`<div class="ver" style="cursor:pointer" onclick="openResult('${esc(x.id)}')"><div style="flex:1">NO.${esc(x.result_no??"")} ${esc(x.subject)}</div>${x.status==="検査中"?tStatusBadge("検査中"):jBadge(x.judgment)}</div>`).join(""):`<div class="note">まだ結果が登録されていません（試験未実施）。</div>`}
     </div>`;
+}
+async function reopenRequest(id){ await loadTests(); openRequest(id); }
+function editRequestModal(id){
+  const r=REQUESTS.find(x=>x.id===id); if(!r)return;
+  modal(`<h3>依頼を編集 ― ${esc(r.request_no)}</h3><div class="body">
+    <label>依頼内容</label><input id="eq_content" value="${esc(r.request_content||"")}">
+    <label>対象物</label><input id="eq_target" value="${esc(r.target||"")}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>製品名</label><input id="eq_product" value="${esc(r.product_name||"")}"></div>
+      <div><label>ロットNo.</label><input id="eq_lot" value="${esc(r.lot_no||"")}"></div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼日</label><input id="eq_date" value="${esc(r.request_date||"")}"></div>
+      <div><label>期日</label><input id="eq_due" value="${esc(r.due_date||"")}"></div></div>
+    <div class="err" id="eq_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-pri" onclick="saveRequestEdit('${esc(id)}',this)">保存</button></div>`);
+}
+async function saveRequestEdit(id,btn){
+  btn.disabled=true;
+  const { error }=await db.from("test_requests").update({
+    request_content:$("eq_content").value.trim(), target:$("eq_target").value.trim(),
+    product_name:$("eq_product").value.trim(), lot_no:$("eq_lot").value.trim(),
+    request_date:$("eq_date").value.trim()||null, due_date:$("eq_due").value.trim()||null
+  }).eq("id",id);
+  if(error){ $("eq_err").textContent="保存できません："+error.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await reopenRequest(id);
 }
 function newRequestModal(){
   modal(`<h3>新規依頼を起票</h3><div class="body">
@@ -427,6 +561,7 @@ async function saveRequest(btn){
   if(error){ $("nr_err").textContent="起票できません："+error.message; btn.disabled=false; return; }
   btn.closest(".modal-bg").remove(); await loadTests();
 }
+
 
 // ---- 起動時：セッションがあれば自動ログイン ----
 (async()=>{ const { data:{ session } } = await db.auth.getSession(); if(session) await afterLogin(); })();
