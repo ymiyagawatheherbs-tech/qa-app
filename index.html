@@ -76,8 +76,8 @@
 <!-- ============ 設定（ここだけ書き換える） ============ -->
 <script>
   // Supabase ダッシュボード > Project Settings > API で確認できます
-  const SUPABASE_URL      = "https://pfnlvkqhtvvadexfbjys.supabase.co";   // ← Project URL
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmbmx2a3FodHZ2YWRleGZianlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNjQ0NjgsImV4cCI6MjA5NjY0MDQ2OH0.kWAFIDhccqPqgI0Emt4suKyMjL9A0E5XZfHSAN8PzUY";                       // ← anon public key
+  const SUPABASE_URL      = "https://YOUR-PROJECT.supabase.co";   // ← Project URL
+  const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";                       // ← anon public key
 </script>
 
 <!-- ============ ログイン ============ -->
@@ -333,13 +333,12 @@ function renderTests(){
   const checks=[];
   RESULTS.forEach(r=>(r.test_checkpoints||[]).forEach(c=>{ if(!c.done) checks.push({...c,_r:r}); }));
   checks.sort((a,b)=>(a.due_date||"").localeCompare(b.due_date||""));
-  const soonLimit=addDays(TODAY,30);
-  const due=checks.filter(c=>c.due_date && c.due_date<=soonLimit);
+  const due=checks.filter(c=>c.due_date && c.due_date<=TODAY);
   const inspecting=RESULTS.filter(r=>r.status==="検査中").length;
   const q=testQ.toLowerCase();
 
   const remHtml = due.length ? `<div class="card" style="margin-bottom:14px;border-color:#fde68a">
-    <div style="padding:10px 12px;font-weight:600;background:#fffbeb;border-bottom:1px solid #fde68a">⏰ 次のチェック（30日以内・超過分）</div>
+    <div style="padding:10px 12px;font-weight:600;background:#fffbeb;border-bottom:1px solid #fde68a">⏰ 本日の要チェック（予定日到来・超過）</div>
     ${due.map(c=>{ const od=c.due_date<TODAY;
       return `<div onclick="openResult('${esc(c._r.id)}')" style="display:flex;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--line2);cursor:pointer">
         <span style="width:110px;${od?'color:var(--rose);font-weight:600':''}">${esc(c.due_date)}${od?' 超過':''}</span>
@@ -380,15 +379,20 @@ function renderTests(){
         <button class="btn ${testTab==='requests'?'btn-pri':'btn-ghost'}" style="border:none;padding:6px 12px" onclick="testTab='requests';renderTests()">試験依頼</button>
       </div>
       <input placeholder="依頼番号・件名・試験品・製品で検索" value="${esc(testQ)}" oninput="testQ=this.value;renderTests()" id="tq">
-      ${canEdit()?`<button class="btn btn-dark" onclick="newRequestModal()">＋ 新規依頼</button>`:""}
+      ${canEdit()?(testTab==="results"?`<button class="btn btn-dark" onclick="newResultModal()">＋ 新規結果</button>`:`<button class="btn btn-dark" onclick="newRequestModal()">＋ 新規依頼</button>`):""}
     </div>${body}`;
   const tq=$("tq"); if(tq){ tq.focus(); tq.setSelectionRange(tq.value.length,tq.value.length); }
 }
 
+const STD_INTERVALS=[["1ヶ月後",1],["3ヶ月後",3],["半年後",6],["9ヶ月後",9],["1年後",12]];
 function openResult(id){
   const r=RESULTS.find(x=>x.id===id); if(!r)return; curResultId=id;
   const req=REQUESTS.find(x=>x.request_no===r.request_no);
-  const cks=(r.test_checkpoints||[]).slice().sort((a,b)=>(a.due_date||"").localeCompare(b.due_date||""));
+  const cks=r.test_checkpoints||[];
+  const findCk=label=>cks.find(c=>c.label===label);
+  const stdLabels=STD_INTERVALS.map(x=>x[0]);
+  const extra=cks.filter(c=>!stdLabels.includes(c.label)).sort((a,b)=>(a.due_date||"").localeCompare(b.due_date||""));
+  const base=r.report_date||TODAY;
   $("view").innerHTML=`<button class="back" onclick="loadTests()">← 一覧へ戻る</button>
     <div class="detail">
       <div class="muted">容器試験結果報告書 NO.${esc(r.result_no??"")} ／ ${esc(r.gmp_no||"GMP No.9-13")}</div>
@@ -410,48 +414,72 @@ function openResult(id){
       </div>
     </div>
     <div class="detail" style="margin-top:14px">
-      <div style="font-weight:600;margin-bottom:10px">次回チェックポイント</div>
-      ${cks.length?cks.map(c=>{ const od=!c.done&&c.due_date<TODAY;
+      <div style="font-weight:600;margin-bottom:10px">経過観察 / チェックポイント</div>
+      <div class="card"><table><thead><tr><th style="width:5.5rem">区分</th><th style="width:9.5rem">予定日</th><th>所見・結果</th><th></th></tr></thead><tbody>
+        ${STD_INTERVALS.map(([label,n],i)=>{ const c=findCk(label); const od=c&&!c.done&&c.due_date&&c.due_date<TODAY;
+          const due=(c&&c.due_date)?c.due_date:(canEdit()?addMonths(base,n):"");
+          return `<tr>
+            <td style="font-weight:600">${label}${od?' <span class="badge b-rose">超過</span>':(c&&c.done?' <span class="badge b-slate">済</span>':"")}</td>
+            <td>${canEdit()?`<input type="date" id="cpd_${i}" value="${esc(due)}" style="padding:6px 8px">`:esc((c&&c.due_date)||"—")}</td>
+            <td>${canEdit()?`<textarea id="cpo_${i}" rows="2" placeholder="所見を入力">${esc((c&&c.observation)||"")}</textarea>`:esc((c&&c.observation)||"—")}</td>
+            <td style="white-space:nowrap">${canEdit()?`<button class="btn btn-pri" style="padding:5px 10px;font-size:12px" onclick="saveSlot('${esc(id)}','${label}',${i})">保存</button> ${c?`<button class="btn btn-ghost" style="padding:5px 8px;font-size:12px" onclick="deleteCheckpoint('${esc(c.id)}')">削除</button>`:""}`:""}</td>
+          </tr>`;
+        }).join("")}
+      </tbody></table></div>
+      ${(extra.length||canEdit())?`<div style="font-weight:600;margin:14px 0 8px">その他のチェック</div>`:""}
+      ${extra.map(c=>{ const od=!c.done&&c.due_date&&c.due_date<TODAY;
         return `<div class="ver ${c.done?'old':''}" style="${od?'border-color:#fecaca;background:#fff1f2':''}"><div style="flex:1">
-          <div>${esc(c.label||"チェック")} ・ <span style="${od?'color:var(--rose);font-weight:600':''}">${esc(c.due_date)}</span>
-            ${c.done?'<span class="badge b-slate">完了</span>':od?'<span class="badge b-rose">期限超過</span>':'<span class="badge b-amber">予定</span>'}</div>
-          ${c.observation?`<div class="muted" style="margin-top:3px">メモ：${esc(c.observation)}</div>`:""}
-        </div>${(!c.done&&canEdit())?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="toggleCheckpoint('${esc(c.id)}')">完了にする</button>`:""}</div>`;
-      }).join(""):`<div class="muted">チェックポイントはありません。</div>`}
-      ${canEdit()?`<div class="note" style="margin-top:10px">
-        <div style="margin-bottom:6px">次の点検予定を追加（報告日 ${esc(r.report_date||TODAY)} を起点とした目安）：</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-          ${[1,3,5,6,9,12].map(n=>`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="quickAdd('${esc(id)}',${n})">+${n===12?'1年':n+'ヶ月'}</button>`).join("")}
-        </div>
-        <div style="display:flex;gap:8px;align-items:end">
-          <div style="flex:1"><label>ラベル</label><input id="ck_label" placeholder="例：3ヶ月後"></div>
-          <div><label>点検予定日</label><input id="ck_due" type="date"></div>
-          <button class="btn btn-pri" onclick="addCheckpoint('${esc(id)}')">追加</button>
-        </div></div>`:""}
+          <div>${esc(c.label||"チェック")} ・ <span style="${od?'color:var(--rose);font-weight:600':''}">${esc(c.due_date||"")}</span> ${c.done?'<span class="badge b-slate">済</span>':od?'<span class="badge b-rose">超過</span>':'<span class="badge b-amber">予定</span>'}</div>
+          ${c.observation?`<div class="muted" style="margin-top:3px">所見：${esc(c.observation)}</div>`:""}
+        </div>${canEdit()?`<div style="display:flex;gap:6px">${!c.done?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="toggleCheckpoint('${esc(c.id)}')">完了</button>`:""}<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="deleteCheckpoint('${esc(c.id)}')">削除</button></div>`:""}</div>`;
+      }).join("")}
+      ${canEdit()?`<div class="note" style="margin-top:8px;display:flex;gap:8px;align-items:end">
+        <div style="flex:1"><label>その他の区分</label><input id="ex_label" placeholder="例：18ヶ月後"></div>
+        <div><label>予定日</label><input id="ex_due" type="date"></div>
+        <button class="btn btn-pri" onclick="addCheckpoint('${esc(id)}')">追加</button>
+      </div>`:""}
+      <div style="font-weight:600;margin:16px 0 6px">その他備考</div>
+      ${canEdit()?`<textarea id="res_remarks" rows="3" placeholder="補足メモ">${esc(r.remarks||"")}</textarea>
+        <div style="margin-top:6px"><button class="btn btn-pri" onclick="saveRemarks('${esc(id)}')">備考を保存</button></div>`:`<div>${esc(r.remarks||"—")}</div>`}
     </div>`;
 }
 async function reopenResult(id){ await loadTests(); openResult(id); }
-async function quickAdd(resultId,n){
-  const r=RESULTS.find(x=>x.id===resultId); const base=r&&r.report_date?r.report_date:TODAY;
-  const due=addMonths(base,n); const label=(n===12?"1年後":n+"ヶ月後");
-  const { error }=await db.from("test_checkpoints").insert({result_id:resultId,label,due_date:due,done:false});
-  if(error){ alert("追加できません："+error.message); return; }
+async function saveSlot(resultId,label,i){
+  const due=$("cpd_"+i).value||null; const obs=$("cpo_"+i).value.trim()||null;
+  const r=RESULTS.find(x=>x.id===resultId); const ex=(r.test_checkpoints||[]).find(c=>c.label===label);
+  const payload={result_id:resultId,label,due_date:due,observation:obs,done:!!obs};
+  const res = ex ? await db.from("test_checkpoints").update(payload).eq("id",ex.id)
+                 : await db.from("test_checkpoints").insert(payload);
+  if(res.error){ alert("保存できません："+res.error.message); return; }
   await reopenResult(resultId);
 }
 async function addCheckpoint(resultId){
-  const label=$("ck_label").value.trim(); const due=$("ck_due").value;
-  if(!due){ alert("点検予定日を入力してください"); return; }
-  const { error }=await db.from("test_checkpoints").insert({result_id:resultId,label:label||"チェック",due_date:due,done:false});
+  const label=$("ex_label").value.trim(); const due=$("ex_due").value;
+  if(!label&&!due){ alert("区分か予定日を入力してください"); return; }
+  const { error }=await db.from("test_checkpoints").insert({result_id:resultId,label:label||"チェック",due_date:due||null,done:false});
   if(error){ alert("追加できません："+error.message); return; }
   await reopenResult(resultId);
 }
 async function toggleCheckpoint(cid){
-  const obs=prompt("点検結果のメモ（任意・空欄可）","");
+  const obs=prompt("所見（任意・空欄可）","");
   if(obs===null) return;
   const { error }=await db.from("test_checkpoints").update({done:true,observation:obs||null}).eq("id",cid);
   if(error){ alert("更新できません："+error.message); return; }
   await reopenResult(curResultId);
 }
+async function deleteCheckpoint(cid){
+  if(!confirm("このチェックポイントを削除します。よろしいですか？")) return;
+  const { error }=await db.from("test_checkpoints").delete().eq("id",cid);
+  if(error){ alert("削除できません："+error.message); return; }
+  await reopenResult(curResultId);
+}
+async function saveRemarks(resultId){
+  const v=$("res_remarks").value.trim()||null;
+  const { error }=await db.from("test_results").update({remarks:v}).eq("id",resultId);
+  if(error){ alert("保存できません："+error.message); return; }
+  await reopenResult(resultId);
+}
+
 function editResultModal(id){
   const r=RESULTS.find(x=>x.id===id); if(!r)return;
   modal(`<h3>結果を編集 ― NO.${esc(r.result_no??"")}</h3><div class="body">
@@ -506,6 +534,7 @@ function openRequest(id){
         ${items.map(i=>`<tr><td class="muted">${esc(i.kind)}</td><td>${esc(i.material||"")}</td><td class="muted">${esc(i.supplier||"")}</td></tr>`).join("")}</tbody></table></div>`:`<div class="muted">資材の登録はありません</div>`}
       <div style="font-weight:600;margin:16px 0 8px">この依頼の試験結果</div>
       ${linked.length?linked.map(x=>`<div class="ver" style="cursor:pointer" onclick="openResult('${esc(x.id)}')"><div style="flex:1">NO.${esc(x.result_no??"")} ${esc(x.subject)}</div>${x.status==="検査中"?tStatusBadge("検査中"):jBadge(x.judgment)}</div>`).join(""):`<div class="note">まだ結果が登録されていません（試験未実施）。</div>`}
+      ${canEdit()?`<div style="margin-top:10px"><button class="btn btn-pri" onclick="newResultModal('${esc(r.request_no)}')">＋ この依頼の結果を入力</button></div>`:""}
     </div>`;
 }
 async function reopenRequest(id){ await loadTests(); openRequest(id); }
@@ -562,6 +591,42 @@ async function saveRequest(btn){
   btn.closest(".modal-bg").remove(); await loadTests();
 }
 
+
+function newResultModal(reqNo){
+  const req = reqNo ? REQUESTS.find(x=>x.request_no===reqNo) : null;
+  modal(`<h3>新規結果を入力</h3><div class="body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼番号</label><input id="nrs_req" value="${esc(reqNo||"")}" placeholder="例：40-9"></div>
+      <div><label>報告日</label><input id="nrs_date" value="${TODAY}"></div></div>
+    <label>件名 *</label><input id="nrs_subject" value="${esc(req?req.request_content:"")}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>作成者</label><input id="nrs_author" value="${esc(ME.email)}"></div>
+      <div><label>状態</label><select id="nrs_status"><option>検査中</option><option>完了</option></select></div></div>
+    <label>実施日</label><input id="nrs_period" placeholder="例：2026/06/10-06/17">
+    <label>試験品</label><textarea id="nrs_sample" rows="2"></textarea>
+    <label>試験方法</label><textarea id="nrs_method" rows="2"></textarea>
+    <label>結果</label><textarea id="nrs_result" rows="2"></textarea>
+    <label>考察</label><textarea id="nrs_disc" rows="2"></textarea>
+    <label>判定</label><select id="nrs_judg"><option value="">未判定</option><option>適</option><option>不適</option></select>
+    <div class="err" id="nrs_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-pri" onclick="saveNewResult(this)">結果を登録</button></div>`);
+}
+async function saveNewResult(btn){
+  const subject=$("nrs_subject").value.trim();
+  if(!subject){ $("nrs_err").textContent="件名は必須です"; return; }
+  btn.disabled=true;
+  const maxNo=RESULTS.reduce((m,r)=>Math.max(m, r.result_no||0), 0);
+  const judg=$("nrs_judg").value;
+  const { data, error }=await db.from("test_results").insert({
+    result_no:maxNo+1, report_date:$("nrs_date").value.trim()||null, author:$("nrs_author").value.trim(),
+    request_no:$("nrs_req").value.trim()||null, subject, status:$("nrs_status").value,
+    test_period:$("nrs_period").value.trim(), sample:$("nrs_sample").value.trim(), method:$("nrs_method").value.trim(),
+    result:$("nrs_result").value.trim(), discussion:$("nrs_disc").value.trim(), judgment:judg||null
+  }).select().single();
+  if(error){ $("nrs_err").textContent="登録できません："+error.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await loadTests(); openResult(data.id);
+}
 
 // ---- 起動時：セッションがあれば自動ログイン ----
 (async()=>{ const { data:{ session } } = await db.auth.getSession(); if(session) await afterLogin(); })();
