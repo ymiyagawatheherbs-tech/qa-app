@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>品質保証システム ― 様式台帳 / 容器試験管理</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#f8fafc; --card:#fff; --line:#e2e8f0; --line2:#f1f5f9;
+    --ink:#1e293b; --sub:#64748b; --faint:#94a3b8;
+    --green:#059669; --green-d:#047857; --green-bg:#d1fae5;
+    --amber:#d97706; --amber-bg:#fef3c7; --rose:#e11d48; --rose-bg:#ffe4e6;
+    --slate:#0f172a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;font-size:14px}
+  .hidden{display:none!important}
+  /* ---- login ---- */
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .login-card{width:100%;max-width:360px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px}
+  .login-card h1{font-size:18px;margin:0 0 4px}
+  .login-card p{color:var(--sub);margin:0 0 20px;font-size:13px}
+  input,select,textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:14px;font-family:inherit;background:#fff}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
+  label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px}
+  .btn{border:none;border-radius:9px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer}
+  .btn-pri{background:var(--green);color:#fff}.btn-pri:hover{background:var(--green-d)}
+  .btn-dark{background:var(--slate);color:#fff}
+  .btn-amber{background:var(--amber);color:#fff}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--sub)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .err{color:var(--rose);font-size:12px;margin-top:10px;min-height:16px}
+  /* ---- app ---- */
+  header{background:#fff;border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:5}
+  .logo{width:34px;height:34px;border-radius:9px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+  header .title{font-weight:700}
+  header .me{margin-left:auto;font-size:12px;color:var(--sub);text-align:right}
+  nav{display:flex;gap:6px;padding:14px 20px 0;max-width:1000px;margin:0 auto}
+  nav button{border:none;background:none;padding:8px 14px;border-radius:9px 9px 0 0;font-weight:600;color:var(--sub);cursor:pointer}
+  nav button.on{background:#fff;color:var(--ink);border:1px solid var(--line);border-bottom:none}
+  main{max-width:1000px;margin:0 auto;padding:16px 20px 60px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:center}
+  .toolbar input,.toolbar select{width:auto;flex:1;min-width:160px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{background:#f8fafc;text-align:left;color:var(--sub);font-weight:500;font-size:12px;padding:10px 12px}
+  td{padding:10px 12px;border-top:1px solid var(--line2)}
+  tr.click:hover{background:#ecfdf5;cursor:pointer}
+  .badge{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600}
+  .b-green{background:var(--green-bg);color:var(--green-d)}
+  .b-amber{background:var(--amber-bg);color:var(--amber)}
+  .b-rose{background:var(--rose-bg);color:var(--rose)}
+  .b-slate{background:#e2e8f0;color:#475569}
+  .b-sky{background:#e0f2fe;color:#0369a1}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
+  .kpi .n{font-size:22px;font-weight:700}.kpi .l{font-size:12px;color:var(--sub)}
+  .back{color:var(--sub);background:none;border:none;cursor:pointer;font-size:13px;margin-bottom:12px}
+  .detail{background:#fff;border:1px solid var(--line);border-radius:13px;padding:18px}
+  .row{display:grid;grid-template-columns:8rem 1fr;gap:8px;padding:8px 0;border-top:1px solid var(--line2);font-size:13.5px}
+  .row:first-child{border-top:none}.row .k{color:var(--faint)}
+  .ver{display:flex;gap:10px;padding:12px;border-radius:10px;margin-bottom:8px;border:1px solid var(--line)}
+  .ver.eff{background:#ecfdf5;border-color:#a7f3d0}.ver.draft{background:#fffbeb;border-color:#fde68a}.ver.old{background:#f8fafc}
+  .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.4);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}
+  .modal{background:#fff;border-radius:16px;width:100%;max-width:480px;max-height:85vh;overflow:auto}
+  .modal h3{margin:0;padding:14px 18px;border-bottom:1px solid var(--line2);font-size:15px}
+  .modal .body{padding:18px}.modal .foot{padding:0 18px 18px;display:flex;justify-content:flex-end;gap:8px}
+  .muted{color:var(--faint);font-size:12px}
+  .note{background:#f8fafc;border-radius:9px;padding:10px 12px;color:var(--sub);font-size:12.5px;margin-top:10px}
+  @media(max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:6rem 1fr}}
+</style>
+</head>
+<body>
+
+<!-- ============ 設定（ここだけ書き換える） ============ -->
+<script>
+  // Supabase ダッシュボード > Project Settings > API で確認できます
+  const SUPABASE_URL      = "https://YOUR-PROJECT.supabase.co";   // ← Project URL
+  const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";                       // ← anon public key
+</script>
+
+<!-- ============ ログイン ============ -->
+<div id="login">
+  <div class="login-card">
+    <div class="logo" style="margin-bottom:14px">QA</div>
+    <h1>品質保証システム</h1>
+    <p>様式台帳 / 容器試験管理</p>
+    <label>メールアドレス</label>
+    <input id="email" type="email" autocomplete="username" />
+    <label>パスワード</label>
+    <input id="password" type="password" autocomplete="current-password" />
+    <div style="margin-top:16px"><button class="btn btn-pri" style="width:100%" onclick="doLogin()">ログイン</button></div>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- ============ アプリ ============ -->
+<div id="app" class="hidden">
+  <header>
+    <div class="logo">QA</div>
+    <div class="title">品質保証システム</div>
+    <div class="me"><span id="meEmail"></span><br><span id="meRole" class="muted"></span></div>
+    <button class="btn btn-ghost" onclick="doLogout()">ログアウト</button>
+  </header>
+  <nav>
+    <button id="tab-forms" class="on" onclick="switchTab('forms')">様式台帳</button>
+    <button id="tab-tests" onclick="switchTab('tests')">容器試験管理</button>
+  </nav>
+  <main id="view"></main>
+</div>
+
+<script>
+// ===================================================================
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const TODAY = new Date().toISOString().slice(0,10);
+let ME = { email:"", role:"viewer" };
+let TAB = "forms";
+const esc = s => (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const canEdit = () => ME.role==="qa" || ME.role==="admin";
+const $ = id => document.getElementById(id);
+
+// ---- 認証 ----
+async function doLogin(){
+  $("loginErr").textContent="";
+  const email=$("email").value.trim(), password=$("password").value;
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if(error){ $("loginErr").textContent="ログインできません："+error.message; return; }
+  await afterLogin();
+}
+async function doLogout(){ await db.auth.signOut(); location.reload(); }
+async function afterLogin(){
+  const { data:{ user } } = await db.auth.getUser();
+  if(!user) return;
+  ME.email = user.email;
+  const { data } = await db.from("profiles").select("role").eq("id",user.id).single();
+  ME.role = data?.role || "viewer";
+  $("meEmail").textContent = ME.email;
+  $("meRole").textContent = "権限：" + ME.role + (canEdit()?"（編集可）":"（閲覧のみ）");
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  switchTab("forms");
+}
+function switchTab(t){
+  TAB=t;
+  $("tab-forms").classList.toggle("on", t==="forms");
+  $("tab-tests").classList.toggle("on", t==="tests");
+  if(t==="forms") loadForms(); else loadTests();
+}
+
+// ===================================================================
+// 様式台帳
+// ===================================================================
+let FORMS=[], formCat="すべて", formQ="";
+const deriveForm = f => {
+  const v = f.form_versions||[];
+  return { valid:v.find(x=>x.status==="有効"), draft:v.find(x=>x.status==="改訂中"), all:v };
+};
+function statusBadge(s){
+  const m={ "有効":"b-green","改訂中":"b-amber","廃止":"b-slate" };
+  return `<span class="badge ${m[s]||"b-slate"}">${esc(s)}</span>`;
+}
+async function loadForms(){
+  $("view").innerHTML = `<p class="muted">読み込み中…</p>`;
+  const { data, error } = await db.from("forms").select("*, form_versions(*)").order("form_no");
+  if(error){ $("view").innerHTML = `<div class="note">読み込みエラー：${esc(error.message)}</div>`; return; }
+  FORMS = data;
+  renderForms();
+}
+function renderForms(){
+  const cats = ["すべて","GQP（品質管理）","GVP（安全管理）","試験・受入（実務）"];
+  let valid=0,draft=0,near=0,total=0;
+  FORMS.forEach(f=>{ const d=deriveForm(f); if(d.valid)valid++; if(d.draft)draft++; total+=d.all.length; if(f.review_date&&f.review_date<="2026-07-01")near++; });
+  const k=$("view");
+  const q=formQ.toLowerCase();
+  const rows = FORMS.filter(f=>(formCat==="すべて"||f.category===formCat))
+    .filter(f=>!q || (f.form_no+f.title+(f.dept||"")).toLowerCase().includes(q))
+    .map(f=>{
+      const d=deriveForm(f); const v=d.valid;
+      return `<tr class="click" onclick="openForm('${esc(f.id)}')">
+        <td style="font-weight:600">${esc(f.form_no)}</td>
+        <td>${esc(f.title)}</td>
+        <td>${v?"v"+esc(v.version_label):"—"}</td>
+        <td>${v?statusBadge("有効"):statusBadge("廃止")} ${d.draft?statusBadge("改訂中"):""}</td>
+        <td class="muted">${esc(v?.effective_date||"—")}</td>
+        <td class="muted">${esc(f.dept||"")}</td>
+      </tr>`;
+    }).join("");
+  k.innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="n">${valid}</div><div class="l">有効な様式</div></div>
+      <div class="kpi"><div class="n">${draft}</div><div class="l">改訂中</div></div>
+      <div class="kpi"><div class="n">${near}</div><div class="l">見直し期限接近</div></div>
+      <div class="kpi"><div class="n">${total}</div><div class="l">総版数</div></div>
+    </div>
+    <div class="toolbar">
+      <input placeholder="様式番号・様式名・所管で検索" value="${esc(formQ)}" oninput="formQ=this.value;renderForms();this.focus?.()" id="fq">
+      <select onchange="formCat=this.value;renderForms()">${cats.map(c=>`<option ${c===formCat?"selected":""}>${c}</option>`).join("")}</select>
+      ${canEdit()?`<button class="btn btn-dark" onclick="newFormModal()">＋ 新規様式</button>`:""}
+    </div>
+    <div class="card"><table>
+      <thead><tr><th>様式番号</th><th>様式名</th><th>版</th><th>状態</th><th>発効日</th><th>所管</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan=6 class="muted" style="text-align:center;padding:30px">該当なし</td></tr>`}</tbody>
+    </table></div>`;
+  const fq=$("fq"); if(fq){ fq.focus(); fq.setSelectionRange(fq.value.length,fq.value.length); }
+}
+function openForm(id){
+  const f=FORMS.find(x=>x.id===id); if(!f)return; const d=deriveForm(f);
+  const near=f.review_date&&f.review_date<="2026-07-01";
+  const versSorted=[...d.all].sort((a,b)=>(b.created_at||"").localeCompare(a.created_at||""));
+  $("view").innerHTML = `
+    <button class="back" onclick="loadForms()">← 一覧へ戻る</button>
+    <div class="detail">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:start">
+        <div><strong style="font-size:16px">${esc(f.form_no)}</strong> ／ ${esc(f.title)}
+          <div class="muted" style="margin-top:3px">${esc(f.category)} ／ 所管：${esc(f.dept||"—")} ／ 備考：${esc(f.remarks||"—")}</div></div>
+        ${canEdit()&&!d.draft?`<button class="btn btn-amber" onclick="reviseModal('${esc(f.id)}')">改訂申請</button>`:""}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+        <div class="ver eff"><div style="flex:1">
+          <div style="font-weight:600;color:var(--green-d)">現在の有効版</div>
+          ${d.valid?`<div style="font-size:22px;font-weight:700">v${esc(d.valid.version_label)}</div>
+            <div class="muted">発効 ${esc(d.valid.effective_date||"—")} ／ 承認 ${esc(d.valid.approver||"—")}</div>`
+            :`<div class="muted" style="margin-top:6px">有効版なし</div>`}
+        </div></div>
+        <div class="ver ${near?'draft':''}"><div style="flex:1">
+          <div style="font-weight:600">次回見直し期限</div>
+          <div style="font-size:22px;font-weight:700">${esc(f.review_date||"—")}</div>
+          ${d.draft?`<div class="note" style="margin-top:6px;display:flex;justify-content:space-between;align-items:center">
+            v${esc(d.draft.version_label)} を改訂中
+            ${canEdit()?`<button class="btn btn-amber" style="padding:4px 10px;font-size:12px" onclick="makeEffective('${esc(d.draft.id)}')">発効する</button>`:""}
+          </div>`:""}
+        </div></div>
+      </div>
+    </div>
+    <div class="detail" style="margin-top:14px">
+      <div style="font-weight:600;margin-bottom:10px">改訂履歴</div>
+      ${versSorted.map(v=>{
+        const cls=v.status==="廃止"?"old":v.status==="改訂中"?"draft":"eff";
+        return `<div class="ver ${cls}"><div style="flex:1">
+          <div>v${esc(v.version_label)} ${statusBadge(v.status)} ${v.status==="廃止"?'<span class="muted">（参照のみ）</span>':''}</div>
+          <div style="margin-top:3px">改訂理由：${esc(v.reason||"—")}</div>
+          <div class="muted" style="margin-top:2px">発効 ${esc(v.effective_date||"—")} ／ 改訂 ${esc(v.revised_date||"—")} ／ 承認 ${esc(v.approver||"—")}</div>
+        </div></div>`;
+      }).join("")}
+    </div>`;
+}
+async function makeEffective(versionId){
+  if(!confirm("この版を発効します。現在の有効版は自動で廃止になります。よろしいですか？"))return;
+  const { error } = await db.rpc("set_version_effective",{ p_version_id:versionId, p_actor:ME.email });
+  if(error){ alert("発効できません："+error.message); return; }
+  await loadForms();
+}
+
+// ---- 新規様式 / 改訂 モーダル ----
+function modal(html){ const d=document.createElement("div"); d.className="modal-bg"; d.onclick=e=>{if(e.target===d)d.remove()};
+  d.innerHTML=`<div class="modal">${html}</div>`; document.body.appendChild(d); return d; }
+function newFormModal(){
+  const m=modal(`<h3>新規様式を登録</h3><div class="body">
+    <label>様式番号 *</label><input id="nf_no" placeholder="例：GQP様式7-6">
+    <label>様式名 *</label><input id="nf_title">
+    <label>分類</label><select id="nf_cat"><option>GQP（品質管理）</option><option>GVP（安全管理）</option><option>試験・受入（実務）</option></select>
+    <label>所管部門</label><input id="nf_dept">
+    <label>備考・関連</label><input id="nf_remarks">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>初版の版番号</label><input id="nf_ver" value="1.0"></div>
+      <div><label>次回見直し日</label><input id="nf_review" placeholder="2027-03-31"></div>
+    </div>
+    <label>承認者</label><input id="nf_appr" placeholder="${esc(ME.email)}">
+    <div class="err" id="nf_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-pri" onclick="saveNewForm(this)">制定して登録</button></div>`);
+}
+async function saveNewForm(btn){
+  const no=$("nf_no").value.trim(), title=$("nf_title").value.trim();
+  if(!no||!title){ $("nf_err").textContent="様式番号と様式名は必須です"; return; }
+  btn.disabled=true;
+  const { data:form, error:e1 } = await db.from("forms").insert({
+    form_no:no, title, category:$("nf_cat").value, dept:$("nf_dept").value.trim(),
+    remarks:$("nf_remarks").value.trim()||"—", review_date:$("nf_review").value.trim()||null
+  }).select().single();
+  if(e1){ $("nf_err").textContent="登録できません："+e1.message; btn.disabled=false; return; }
+  const { error:e2 } = await db.from("form_versions").insert({
+    form_id:form.id, version_label:$("nf_ver").value.trim()||"1.0", status:"有効",
+    reason:"制定", effective_date:TODAY, revised_date:TODAY, approver:$("nf_appr").value.trim()||ME.email
+  });
+  if(e2){ $("nf_err").textContent="版の登録に失敗："+e2.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await loadForms();
+}
+function reviseModal(formId){
+  const f=FORMS.find(x=>x.id===formId); const cur=deriveForm(f).valid;
+  const m=modal(`<h3>改訂申請 ― ${esc(f.form_no)}</h3><div class="body">
+    <div class="note">申請すると新版が「改訂中（発効待ち）」で登録されます。発効するまでは現在の有効版（v${esc(cur?.version_label||"—")}）を使用します。</div>
+    <label>新しい版番号 *</label><input id="rv_ver">
+    <label>改訂理由 *</label><textarea id="rv_reason" rows="3"></textarea>
+    <div class="err" id="rv_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-amber" onclick="saveRevision('${esc(formId)}',this)">改訂を申請</button></div>`);
+}
+async function saveRevision(formId,btn){
+  const ver=$("rv_ver").value.trim(), reason=$("rv_reason").value.trim();
+  if(!ver||!reason){ $("rv_err").textContent="版番号と改訂理由は必須です"; return; }
+  btn.disabled=true;
+  const { error } = await db.from("form_versions").insert({
+    form_id:formId, version_label:ver, status:"改訂中", reason, revised_date:TODAY, approver:"（承認待ち）"
+  });
+  if(error){ $("rv_err").textContent="申請できません："+error.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await loadForms();
+}
+
+// ===================================================================
+// 容器試験管理
+// ===================================================================
+let REQUESTS=[], RESULTS=[], testTab="results", testQ="", curResultId=null, curRequestId=null;
+function jBadge(v){ if(v==="適")return `<span class="badge b-green">適</span>`; if(v==="不適")return `<span class="badge b-rose">不適</span>`; return `<span class="badge b-slate">未判定</span>`; }
+function tStatusBadge(s){ return s==="検査中" ? `<span class="badge b-sky">検査中</span>` : `<span class="badge b-slate">完了</span>`; }
+function addDays(iso,n){ const d=new Date(iso); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function addMonths(iso,n){ const d=new Date(iso||TODAY); if(isNaN(d)) return null; d.setMonth(d.getMonth()+n); return d.toISOString().slice(0,10); }
+
+async function loadTests(){
+  $("view").innerHTML=`<p class="muted">読み込み中…</p>`;
+  const [r1,r2]=await Promise.all([
+    db.from("test_results").select("*, test_checkpoints(*)").order("report_date",{ascending:false,nullsFirst:false}),
+    db.from("test_requests").select("*, test_request_items(*)").order("request_date",{ascending:false,nullsFirst:false})
+  ]);
+  if(r1.error||r2.error){ $("view").innerHTML=`<div class="note">読み込みエラー：${esc((r1.error||r2.error).message)}</div>`; return; }
+  RESULTS=r1.data; REQUESTS=r2.data; renderTests();
+}
+function renderTests(){
+  const resByReq=n=>RESULTS.filter(x=>x.request_no&&x.request_no===n);
+  const reqByNo=n=>REQUESTS.find(x=>x.request_no===n);
+  // リマインダー：未完了チェックポイント
+  const checks=[];
+  RESULTS.forEach(r=>(r.test_checkpoints||[]).forEach(c=>{ if(!c.done) checks.push({...c,_r:r}); }));
+  checks.sort((a,b)=>(a.due_date||"").localeCompare(b.due_date||""));
+  const due=checks.filter(c=>c.due_date && c.due_date<=TODAY);
+  const inspecting=RESULTS.filter(r=>r.status==="検査中").length;
+  const q=testQ.toLowerCase();
+
+  const remHtml = due.length ? `<div class="card" style="margin-bottom:14px;border-color:#fde68a">
+    <div style="padding:10px 12px;font-weight:600;background:#fffbeb;border-bottom:1px solid #fde68a">⏰ 本日の要チェック（予定日到来・超過）</div>
+    ${due.map(c=>{ const od=c.due_date<TODAY;
+      return `<div onclick="openResult('${esc(c._r.id)}')" style="display:flex;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--line2);cursor:pointer">
+        <span style="width:110px;${od?'color:var(--rose);font-weight:600':''}">${esc(c.due_date)}${od?' 超過':''}</span>
+        <span style="flex:1">${esc(c._r.subject)} <span class="muted">/ ${esc(c.label||"")}</span></span>
+        ${tStatusBadge(c._r.status)}</div>`;}).join("")}
+  </div>` : "";
+
+  let body="";
+  if(testTab==="results"){
+    const rows=RESULTS.filter(r=>!q||(((r.result_no||"")+(r.request_no||"")+(r.subject||"")+(r.sample||"")).toLowerCase().includes(q)))
+      .map(r=>`<tr class="click" onclick="openResult('${esc(r.id)}')">
+        <td style="font-weight:600">${esc(r.result_no??"")}</td><td>${esc(r.subject)}</td>
+        <td class="muted">${r.request_no?esc(r.request_no):'<span class="muted">未記入</span>'}</td>
+        <td class="muted">${esc(r.report_date||"")}</td><td>${tStatusBadge(r.status)}</td><td>${jBadge(r.judgment)}</td></tr>`).join("");
+    body=`<div class="card"><table><thead><tr><th>NO</th><th>件名</th><th>依頼番号</th><th>報告日</th><th>状態</th><th>判定</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan=6 class="muted" style="text-align:center;padding:30px">該当なし</td></tr>`}</tbody></table></div>`;
+  } else {
+    const rows=REQUESTS.filter(r=>!q||((r.request_no+(r.request_content||"")+(r.target||"")+(r.product_name||"")).toLowerCase().includes(q)))
+      .map(r=>{ const lk=resByReq(r.request_no);
+        return `<tr class="click" onclick="openRequest('${esc(r.id)}')">
+        <td style="font-weight:600">${esc(r.request_no)}</td><td>${esc(r.request_content)}</td>
+        <td class="muted">${esc(r.target||"")}</td><td class="muted">${esc(r.request_date||"")}</td>
+        <td>${lk.length?(lk[0].status==="検査中"?tStatusBadge("検査中"):jBadge(lk[0].judgment)):'<span class="muted">未実施</span>'}</td></tr>`; }).join("");
+    body=`<div class="card"><table><thead><tr><th>依頼番号</th><th>依頼内容</th><th>対象物</th><th>依頼日</th><th>結果</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan=5 class="muted" style="text-align:center;padding:30px">該当なし</td></tr>`}</tbody></table></div>`;
+  }
+  $("view").innerHTML=`
+    <div class="kpis">
+      <div class="kpi"><div class="n">${REQUESTS.length}</div><div class="l">試験依頼</div></div>
+      <div class="kpi"><div class="n">${RESULTS.length}</div><div class="l">試験結果</div></div>
+      <div class="kpi"><div class="n">${inspecting}</div><div class="l">検査中</div></div>
+      <div class="kpi"><div class="n">${due.length}</div><div class="l">要チェック</div></div>
+    </div>
+    ${remHtml}
+    <div class="toolbar">
+      <div style="display:flex;gap:4px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px">
+        <button class="btn ${testTab==='results'?'btn-pri':'btn-ghost'}" style="border:none;padding:6px 12px" onclick="testTab='results';renderTests()">試験結果</button>
+        <button class="btn ${testTab==='requests'?'btn-pri':'btn-ghost'}" style="border:none;padding:6px 12px" onclick="testTab='requests';renderTests()">試験依頼</button>
+      </div>
+      <input placeholder="依頼番号・件名・試験品・製品で検索" value="${esc(testQ)}" oninput="testQ=this.value;renderTests()" id="tq">
+      ${canEdit()?(testTab==="results"?`<button class="btn btn-dark" onclick="newResultModal()">＋ 新規結果</button>`:`<button class="btn btn-dark" onclick="newRequestModal()">＋ 新規依頼</button>`):""}
+    </div>${body}`;
+  const tq=$("tq"); if(tq){ tq.focus(); tq.setSelectionRange(tq.value.length,tq.value.length); }
+}
+
+const STD_INTERVALS=[["1ヶ月後",1],["3ヶ月後",3],["半年後",6],["9ヶ月後",9],["1年後",12]];
+function openResult(id){
+  const r=RESULTS.find(x=>x.id===id); if(!r)return; curResultId=id;
+  const req=REQUESTS.find(x=>x.request_no===r.request_no);
+  const cks=r.test_checkpoints||[];
+  const findCk=label=>cks.find(c=>c.label===label);
+  const stdLabels=STD_INTERVALS.map(x=>x[0]);
+  const extra=cks.filter(c=>!stdLabels.includes(c.label)).sort((a,b)=>(a.due_date||"").localeCompare(b.due_date||""));
+  const base=r.report_date||TODAY;
+  $("view").innerHTML=`<button class="back" onclick="loadTests()">← 一覧へ戻る</button>
+    <div class="detail">
+      <div class="muted">容器試験結果報告書 NO.${esc(r.result_no??"")} ／ ${esc(r.gmp_no||"GMP No.9-13")}</div>
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:12px">
+        <strong style="font-size:16px">${esc(r.subject)}</strong>
+        <div style="display:flex;gap:6px;align-items:center">${tStatusBadge(r.status)} ${jBadge(r.judgment)}</div></div>
+      <div class="muted">報告日 ${esc(r.report_date||"")} ／ 作成者 ${esc(r.author||"")}</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        ${r.request_no?`<button class="btn btn-ghost" style="border-color:#a7f3d0;background:#ecfdf5;color:var(--green-d)" onclick="${req?`openRequest('${esc(req.id)}')`:'void 0'}">🔗 依頼 ${esc(r.request_no)}${req?`（${esc(req.request_content)}）`:'（該当なし）'}</button>`:""}
+        ${canEdit()?`<button class="btn btn-ghost" onclick="editResultModal('${esc(id)}')">✎ 内容を編集</button>`:""}
+      </div>
+      <div style="margin-top:14px">
+        <div class="row"><span class="k">実施日</span><span>${esc(r.test_period||"")}</span></div>
+        <div class="row"><span class="k">試験品</span><span>${esc(r.sample||"")}</span></div>
+        <div class="row"><span class="k">試験方法</span><span>${esc(r.method||"")}</span></div>
+        <div class="row"><span class="k">結果</span><span>${esc(r.result||"")}</span></div>
+        <div class="row"><span class="k">考察</span><span>${esc(r.discussion||"")}</span></div>
+        <div class="row"><span class="k">添付資料</span><span>${esc(r.attachments||"")}</span></div>
+      </div>
+    </div>
+    <div class="detail" style="margin-top:14px">
+      <div style="font-weight:600;margin-bottom:10px">経過観察 / チェックポイント</div>
+      <div class="card"><table><thead><tr><th style="width:5.5rem">区分</th><th style="width:9.5rem">予定日</th><th>所見・結果</th><th></th></tr></thead><tbody>
+        ${STD_INTERVALS.map(([label,n],i)=>{ const c=findCk(label); const od=c&&!c.done&&c.due_date&&c.due_date<TODAY;
+          const due=(c&&c.due_date)?c.due_date:(canEdit()?addMonths(base,n):"");
+          return `<tr>
+            <td style="font-weight:600">${label}${od?' <span class="badge b-rose">超過</span>':(c&&c.done?' <span class="badge b-slate">済</span>':"")}</td>
+            <td>${canEdit()?`<input type="date" id="cpd_${i}" value="${esc(due)}" style="padding:6px 8px">`:esc((c&&c.due_date)||"—")}</td>
+            <td>${canEdit()?`<textarea id="cpo_${i}" rows="2" placeholder="所見を入力">${esc((c&&c.observation)||"")}</textarea>`:esc((c&&c.observation)||"—")}</td>
+            <td style="white-space:nowrap">${canEdit()?`<button class="btn btn-pri" style="padding:5px 10px;font-size:12px" onclick="saveSlot('${esc(id)}','${label}',${i})">保存</button> ${c?`<button class="btn btn-ghost" style="padding:5px 8px;font-size:12px" onclick="deleteCheckpoint('${esc(c.id)}')">削除</button>`:""}`:""}</td>
+          </tr>`;
+        }).join("")}
+      </tbody></table></div>
+      ${(extra.length||canEdit())?`<div style="font-weight:600;margin:14px 0 8px">その他のチェック</div>`:""}
+      ${extra.map(c=>{ const od=!c.done&&c.due_date&&c.due_date<TODAY;
+        return `<div class="ver ${c.done?'old':''}" style="${od?'border-color:#fecaca;background:#fff1f2':''}"><div style="flex:1">
+          <div>${esc(c.label||"チェック")} ・ <span style="${od?'color:var(--rose);font-weight:600':''}">${esc(c.due_date||"")}</span> ${c.done?'<span class="badge b-slate">済</span>':od?'<span class="badge b-rose">超過</span>':'<span class="badge b-amber">予定</span>'}</div>
+          ${c.observation?`<div class="muted" style="margin-top:3px">所見：${esc(c.observation)}</div>`:""}
+        </div>${canEdit()?`<div style="display:flex;gap:6px">${!c.done?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="toggleCheckpoint('${esc(c.id)}')">完了</button>`:""}<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="deleteCheckpoint('${esc(c.id)}')">削除</button></div>`:""}</div>`;
+      }).join("")}
+      ${canEdit()?`<div class="note" style="margin-top:8px;display:flex;gap:8px;align-items:end">
+        <div style="flex:1"><label>その他の区分</label><input id="ex_label" placeholder="例：18ヶ月後"></div>
+        <div><label>予定日</label><input id="ex_due" type="date"></div>
+        <button class="btn btn-pri" onclick="addCheckpoint('${esc(id)}')">追加</button>
+      </div>`:""}
+      <div style="font-weight:600;margin:16px 0 6px">その他備考</div>
+      ${canEdit()?`<textarea id="res_remarks" rows="3" placeholder="補足メモ">${esc(r.remarks||"")}</textarea>
+        <div style="margin-top:6px"><button class="btn btn-pri" onclick="saveRemarks('${esc(id)}')">備考を保存</button></div>`:`<div>${esc(r.remarks||"—")}</div>`}
+    </div>`;
+}
+async function reopenResult(id){ await loadTests(); openResult(id); }
+async function saveSlot(resultId,label,i){
+  const due=$("cpd_"+i).value||null; const obs=$("cpo_"+i).value.trim()||null;
+  const r=RESULTS.find(x=>x.id===resultId); const ex=(r.test_checkpoints||[]).find(c=>c.label===label);
+  const payload={result_id:resultId,label,due_date:due,observation:obs,done:!!obs};
+  const res = ex ? await db.from("test_checkpoints").update(payload).eq("id",ex.id)
+                 : await db.from("test_checkpoints").insert(payload);
+  if(res.error){ alert("保存できません："+res.error.message); return; }
+  await reopenResult(resultId);
+}
+async function addCheckpoint(resultId){
+  const label=$("ex_label").value.trim(); const due=$("ex_due").value;
+  if(!label&&!due){ alert("区分か予定日を入力してください"); return; }
+  const { error }=await db.from("test_checkpoints").insert({result_id:resultId,label:label||"チェック",due_date:due||null,done:false});
+  if(error){ alert("追加できません："+error.message); return; }
+  await reopenResult(resultId);
+}
+async function toggleCheckpoint(cid){
+  const obs=prompt("所見（任意・空欄可）","");
+  if(obs===null) return;
+  const { error }=await db.from("test_checkpoints").update({done:true,observation:obs||null}).eq("id",cid);
+  if(error){ alert("更新できません："+error.message); return; }
+  await reopenResult(curResultId);
+}
+async function deleteCheckpoint(cid){
+  if(!confirm("このチェックポイントを削除します。よろしいですか？")) return;
+  const { error }=await db.from("test_checkpoints").delete().eq("id",cid);
+  if(error){ alert("削除できません："+error.message); return; }
+  await reopenResult(curResultId);
+}
+async function saveRemarks(resultId){
+  const v=$("res_remarks").value.trim()||null;
+  const { error }=await db.from("test_results").update({remarks:v}).eq("id",resultId);
+  if(error){ alert("保存できません："+error.message); return; }
+  await reopenResult(resultId);
+}
+
+function editResultModal(id){
+  const r=RESULTS.find(x=>x.id===id); if(!r)return;
+  modal(`<h3>結果を編集 ― NO.${esc(r.result_no??"")}</h3><div class="body">
+    <label>件名</label><input id="er_subject" value="${esc(r.subject||"")}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>状態</label><select id="er_status"><option ${r.status==="検査中"?"selected":""}>検査中</option><option ${r.status!=="検査中"?"selected":""}>完了</option></select></div>
+      <div><label>判定</label><select id="er_judg"><option value="" ${!r.judgment?"selected":""}>未判定</option><option ${r.judgment==="適"?"selected":""}>適</option><option ${r.judgment==="不適"?"selected":""}>不適</option></select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼番号</label><input id="er_req" value="${esc(r.request_no||"")}"></div>
+      <div><label>報告日</label><input id="er_date" value="${esc(r.report_date||"")}"></div></div>
+    <label>作成者</label><input id="er_author" value="${esc(r.author||"")}">
+    <label>実施日</label><input id="er_period" value="${esc(r.test_period||"")}">
+    <label>試験品</label><textarea id="er_sample" rows="2">${esc(r.sample||"")}</textarea>
+    <label>試験方法</label><textarea id="er_method" rows="2">${esc(r.method||"")}</textarea>
+    <label>結果</label><textarea id="er_result" rows="3">${esc(r.result||"")}</textarea>
+    <label>考察</label><textarea id="er_disc" rows="2">${esc(r.discussion||"")}</textarea>
+    <label>添付資料</label><input id="er_attach" value="${esc(r.attachments||"")}">
+    <div class="err" id="er_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-pri" onclick="saveResultEdit('${esc(id)}',this)">保存</button></div>`);
+}
+async function saveResultEdit(id,btn){
+  btn.disabled=true; const judg=$("er_judg").value;
+  const { error }=await db.from("test_results").update({
+    subject:$("er_subject").value.trim(), status:$("er_status").value, judgment:judg||null,
+    request_no:$("er_req").value.trim()||null, report_date:$("er_date").value.trim()||null,
+    author:$("er_author").value.trim(), test_period:$("er_period").value.trim(),
+    sample:$("er_sample").value.trim(), method:$("er_method").value.trim(),
+    result:$("er_result").value.trim(), discussion:$("er_disc").value.trim(), attachments:$("er_attach").value.trim()
+  }).eq("id",id);
+  if(error){ $("er_err").textContent="保存できません："+error.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await reopenResult(id);
+}
+
+function openRequest(id){
+  const r=REQUESTS.find(x=>x.id===id); if(!r)return; curRequestId=id;
+  const linked=RESULTS.filter(x=>x.request_no===r.request_no);
+  const items=(r.test_request_items||[]);
+  $("view").innerHTML=`<button class="back" onclick="loadTests()">← 一覧へ戻る</button>
+    <div class="detail">
+      <div class="muted">容器試験依頼書 ／ 依頼番号 ${esc(r.request_no)}</div>
+      <strong style="font-size:16px">${esc(r.request_content)}</strong>
+      ${canEdit()?`<div style="margin-top:8px"><button class="btn btn-ghost" onclick="editRequestModal('${esc(r.id)}')">✎ 内容を編集</button></div>`:""}
+      <div style="margin-top:8px">
+        <div class="row"><span class="k">対象物</span><span>${esc(r.target||"—")}</span></div>
+        <div class="row"><span class="k">製品 / Lot</span><span>${esc([r.product_name,r.lot_no].filter(Boolean).join(" / ")||"—")}</span></div>
+        <div class="row"><span class="k">依頼日 / 期日</span><span>${esc(r.request_date||"—")} ／ ${esc(r.due_date||"—")}</span></div>
+      </div>
+      <div style="font-weight:600;margin:14px 0 8px">資材</div>
+      ${items.length?`<div class="card"><table><thead><tr><th>種別</th><th>品名・型番</th><th>手配先</th></tr></thead><tbody>
+        ${items.map(i=>`<tr><td class="muted">${esc(i.kind)}</td><td>${esc(i.material||"")}</td><td class="muted">${esc(i.supplier||"")}</td></tr>`).join("")}</tbody></table></div>`:`<div class="muted">資材の登録はありません</div>`}
+      <div style="font-weight:600;margin:16px 0 8px">この依頼の試験結果</div>
+      ${linked.length?linked.map(x=>`<div class="ver" style="cursor:pointer" onclick="openResult('${esc(x.id)}')"><div style="flex:1">NO.${esc(x.result_no??"")} ${esc(x.subject)}</div>${x.status==="検査中"?tStatusBadge("検査中"):jBadge(x.judgment)}</div>`).join(""):`<div class="note">まだ結果が登録されていません（試験未実施）。</div>`}
+      ${canEdit()?`<div style="margin-top:10px"><button class="btn btn-pri" onclick="newResultModal('${esc(r.request_no)}')">＋ この依頼の結果を入力</button></div>`:""}
+    </div>`;
+}
+async function reopenRequest(id){ await loadTests(); openRequest(id); }
+function editRequestModal(id){
+  const r=REQUESTS.find(x=>x.id===id); if(!r)return;
+  modal(`<h3>依頼を編集 ― ${esc(r.request_no)}</h3><div class="body">
+    <label>依頼内容</label><input id="eq_content" value="${esc(r.request_content||"")}">
+    <label>対象物</label><input id="eq_target" value="${esc(r.target||"")}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>製品名</label><input id="eq_product" value="${esc(r.product_name||"")}"></div>
+      <div><label>ロットNo.</label><input id="eq_lot" value="${esc(r.lot_no||"")}"></div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼日</label><input id="eq_date" value="${esc(r.request_date||"")}"></div>
+      <div><label>期日</label><input id="eq_due" value="${esc(r.due_date||"")}"></div></div>
+    <div class="err" id="eq_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-pri" onclick="saveRequestEdit('${esc(id)}',this)">保存</button></div>`);
+}
+async function saveRequestEdit(id,btn){
+  btn.disabled=true;
+  const { error }=await db.from("test_requests").update({
+    request_content:$("eq_content").value.trim(), target:$("eq_target").value.trim(),
+    product_name:$("eq_product").value.trim(), lot_no:$("eq_lot").value.trim(),
+    request_date:$("eq_date").value.trim()||null, due_date:$("eq_due").value.trim()||null
+  }).eq("id",id);
+  if(error){ $("eq_err").textContent="保存できません："+error.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await reopenRequest(id);
+}
+function newRequestModal(){
+  modal(`<h3>新規依頼を起票</h3><div class="body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼番号 *</label><input id="nr_no" placeholder="例：40-9"></div>
+      <div><label>依頼日</label><input id="nr_date" value="${TODAY}"></div></div>
+    <label>依頼内容 *</label><input id="nr_content">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>対象物</label><input id="nr_target"></div>
+      <div><label>期日</label><input id="nr_due" placeholder="2026-06-30"></div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>製品名</label><input id="nr_product"></div>
+      <div><label>ロットNo.</label><input id="nr_lot"></div></div>
+    <div class="err" id="nr_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-pri" onclick="saveRequest(this)">起票する</button></div>`);
+}
+async function saveRequest(btn){
+  const no=$("nr_no").value.trim(), content=$("nr_content").value.trim();
+  if(!no||!content){ $("nr_err").textContent="依頼番号と依頼内容は必須です"; return; }
+  btn.disabled=true;
+  const { error } = await db.from("test_requests").insert({
+    request_no:no, request_date:$("nr_date").value.trim()||null, due_date:$("nr_due").value.trim()||null,
+    request_content:content, target:$("nr_target").value.trim(), product_name:$("nr_product").value.trim(), lot_no:$("nr_lot").value.trim()
+  });
+  if(error){ $("nr_err").textContent="起票できません："+error.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await loadTests();
+}
+
+
+function newResultModal(reqNo){
+  const req = reqNo ? REQUESTS.find(x=>x.request_no===reqNo) : null;
+  modal(`<h3>新規結果を入力</h3><div class="body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼番号</label><input id="nrs_req" value="${esc(reqNo||"")}" placeholder="例：40-9"></div>
+      <div><label>報告日</label><input id="nrs_date" value="${TODAY}"></div></div>
+    <label>件名 *</label><input id="nrs_subject" value="${esc(req?req.request_content:"")}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>作成者</label><input id="nrs_author" value="${esc(ME.email)}"></div>
+      <div><label>状態</label><select id="nrs_status"><option>検査中</option><option>完了</option></select></div></div>
+    <label>実施日</label><input id="nrs_period" placeholder="例：2026/06/10-06/17">
+    <label>試験品</label><textarea id="nrs_sample" rows="2"></textarea>
+    <label>試験方法</label><textarea id="nrs_method" rows="2"></textarea>
+    <label>結果</label><textarea id="nrs_result" rows="2"></textarea>
+    <label>考察</label><textarea id="nrs_disc" rows="2"></textarea>
+    <label>判定</label><select id="nrs_judg"><option value="">未判定</option><option>適</option><option>不適</option></select>
+    <div class="err" id="nrs_err"></div></div>
+    <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
+    <button class="btn btn-pri" onclick="saveNewResult(this)">結果を登録</button></div>`);
+}
+async function saveNewResult(btn){
+  const subject=$("nrs_subject").value.trim();
+  if(!subject){ $("nrs_err").textContent="件名は必須です"; return; }
+  btn.disabled=true;
+  const maxNo=RESULTS.reduce((m,r)=>Math.max(m, r.result_no||0), 0);
+  const judg=$("nrs_judg").value;
+  const { data, error }=await db.from("test_results").insert({
+    result_no:maxNo+1, report_date:$("nrs_date").value.trim()||null, author:$("nrs_author").value.trim(),
+    request_no:$("nrs_req").value.trim()||null, subject, status:$("nrs_status").value,
+    test_period:$("nrs_period").value.trim(), sample:$("nrs_sample").value.trim(), method:$("nrs_method").value.trim(),
+    result:$("nrs_result").value.trim(), discussion:$("nrs_disc").value.trim(), judgment:judg||null
+  }).select().single();
+  if(error){ $("nrs_err").textContent="登録できません："+error.message; btn.disabled=false; return; }
+  btn.closest(".modal-bg").remove(); await loadTests(); openResult(data.id);
+}
+
+// ---- 起動時：セッションがあれば自動ログイン ----
+(async()=>{ const { data:{ session } } = await db.auth.getSession(); if(session) await afterLogin(); })();
+</script>
+</body>
+</html>
