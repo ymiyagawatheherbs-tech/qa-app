@@ -582,24 +582,17 @@ function newRequestModal(){
   NRI=[{kind:"容器",custom:"",part_no:"",maker:""}];
   const autoNo=nextRequestNo();
   modal(`<h3>新規依頼を起票</h3><div class="body">
-    <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line)">
-      <button type="button" id="nrtab_basic" class="btn btn-ghost" style="border:none;border-radius:0;border-bottom:2px solid var(--green);color:var(--ink)" onclick="nrTab('basic')">基本情報</button>
-      <button type="button" id="nrtab_mat" class="btn btn-ghost" style="border:none;border-radius:0;border-bottom:2px solid transparent" onclick="nrTab('mat')">資材情報</button>
-    </div>
-    <div id="nrp_basic">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label>依頼番号（自動採番）</label><input id="nq_no" value="${esc(autoNo)}" readonly style="background:#f1f5f9;color:var(--sub)"></div>
-        <div><label>依頼日</label><input id="nq_date" value="${TODAY}"></div></div>
-      <label>依頼内容 *</label><input id="nq_content">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label>対象物</label><input id="nq_target"></div>
-        <div><label>期日</label><input id="nq_due" placeholder="2026-06-30"></div></div>
-    </div>
-    <div id="nrp_mat" style="display:none">
-      <div class="muted" style="margin-bottom:8px">資材の種別・品番・メーカーを入力します。</div>
-      <div id="nri_list"></div>
-      <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addNRI()">＋ 資材を追加</button>
-    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼番号（自動採番）</label><input id="nq_no" value="${esc(autoNo)}" readonly style="background:#f1f5f9;color:var(--sub)"></div>
+      <div><label>依頼日</label><input id="nq_date" value="${TODAY}"></div></div>
+    <label>依頼内容 *</label><input id="nq_content">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>対象物</label><input id="nq_target"></div>
+      <div><label>期日</label><input id="nq_due" placeholder="2026-06-30"></div></div>
+    <div style="font-weight:600;margin:16px 0 6px;padding-top:12px;border-top:1px solid var(--line2)">資材情報</div>
+    <div class="muted" style="margin-bottom:8px">資材の種別・品番・メーカーを入力します。</div>
+    <div id="nri_list"></div>
+    <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addNRI()">＋ 資材を追加</button>
     <div class="err" id="nq_err"></div></div>
     <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
     <button class="btn btn-pri" onclick="saveRequest(this)">起票する</button></div>`);
@@ -607,7 +600,7 @@ function newRequestModal(){
 }
 async function saveRequest(btn){
   const content=$("nq_content").value.trim();
-  if(!content){ $("nq_err").textContent="依頼内容は必須です"; nrTab("basic"); return; }
+  if(!content){ $("nq_err").textContent="依頼内容は必須です"; return; }
   btn.disabled=true;
   const no=nextRequestNo();
   const { data, error } = await db.from("test_requests").insert({
@@ -630,42 +623,27 @@ function newResultModal(reqNo){
     ? req.test_request_items.map(it=>({ kind:mapReqKind(it.kind), custom:(MAT_KINDS.includes(it.kind)?"":it.kind), part_no:it.material||"", maker:it.supplier||"" }))
     : [{ kind:"容器", custom:"", part_no:"", maker:"" }];
   modal(`<h3>新規結果を入力</h3><div class="body">
-    <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line)">
-      <button type="button" id="nrtab_basic" class="btn btn-ghost" style="border:none;border-radius:0;border-bottom:2px solid var(--green);color:var(--ink)" onclick="nrTab('basic')">基本情報</button>
-      <button type="button" id="nrtab_mat" class="btn btn-ghost" style="border:none;border-radius:0;border-bottom:2px solid transparent" onclick="nrTab('mat')">資材情報</button>
-    </div>
-    <div id="nrp_basic">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label>依頼番号</label><input id="nrs_req" value="${esc(reqNo||"")}" placeholder="例：40-9"></div>
-        <div><label>報告日</label><input id="nrs_date" value="${TODAY}"></div></div>
-      <label>件名 *</label><input id="nrs_subject" value="${esc(req?req.request_content:"")}">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label>作成者</label><input id="nrs_author" value="${esc(ME.email)}"></div>
-        <div><label>状態</label><select id="nrs_status"><option>検査中</option><option>完了</option></select></div></div>
-      <label>実施日</label><input id="nrs_period" placeholder="例：2026/06/10-06/17">
-      <label>試験品</label><textarea id="nrs_sample" rows="2"></textarea>
-      <label>試験方法</label><textarea id="nrs_method" rows="2"></textarea>
-      <label>結果</label><textarea id="nrs_result" rows="2"></textarea>
-      <label>考察</label><textarea id="nrs_disc" rows="2"></textarea>
-      <label>判定</label><select id="nrs_judg"><option value="">未判定</option><option>適</option><option>不適</option></select>
-    </div>
-    <div id="nrp_mat" style="display:none">
-      <div class="muted" style="margin-bottom:8px">試験する資材の種別・品番・メーカーを入力します。</div>
-      <div id="nri_list"></div>
-      <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addNRI()">＋ 資材を追加</button>
-    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>依頼番号</label><input id="nrs_req" value="${esc(reqNo||"")}" placeholder="例：40-9"></div>
+      <div><label>報告日</label><input id="nrs_date" value="${TODAY}"></div></div>
+    <label>件名 *</label><input id="nrs_subject" value="${esc(req?req.request_content:"")}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label>作成者</label><input id="nrs_author" value="${esc(ME.email)}"></div>
+      <div><label>状態</label><select id="nrs_status"><option>検査中</option><option>完了</option></select></div></div>
+    <label>実施日</label><input id="nrs_period" placeholder="例：2026/06/10-06/17">
+    <label>試験品</label><textarea id="nrs_sample" rows="2"></textarea>
+    <label>試験方法</label><textarea id="nrs_method" rows="2"></textarea>
+    <label>結果</label><textarea id="nrs_result" rows="2"></textarea>
+    <label>考察</label><textarea id="nrs_disc" rows="2"></textarea>
+    <label>判定</label><select id="nrs_judg"><option value="">未判定</option><option>適</option><option>不適</option></select>
+    <div style="font-weight:600;margin:16px 0 6px;padding-top:12px;border-top:1px solid var(--line2)">資材情報</div>
+    <div class="muted" style="margin-bottom:8px">試験する資材の種別・品番・メーカーを入力します。</div>
+    <div id="nri_list"></div>
+    <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addNRI()">＋ 資材を追加</button>
     <div class="err" id="nrs_err"></div></div>
     <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
     <button class="btn btn-pri" onclick="saveNewResult(this)">結果を登録</button></div>`);
   renderNRI();
-}
-function nrTab(name){
-  const b=$("nrp_basic"), m=$("nrp_mat"), tb=$("nrtab_basic"), tm=$("nrtab_mat");
-  const on = name==="mat";
-  b.style.display=on?"none":"block"; m.style.display=on?"block":"none";
-  tb.style.borderBottom=on?"2px solid transparent":"2px solid var(--green)";
-  tm.style.borderBottom=on?"2px solid var(--green)":"2px solid transparent";
-  tb.style.color=on?"var(--sub)":"var(--ink)"; tm.style.color=on?"var(--ink)":"var(--sub)";
 }
 function renderNRI(){
   const el=$("nri_list"); if(!el)return;
@@ -684,7 +662,7 @@ function addNRI(){ NRI.push({kind:"容器",custom:"",part_no:"",maker:""}); rend
 function delNRI(idx){ NRI.splice(idx,1); if(NRI.length===0) NRI.push({kind:"容器",custom:"",part_no:"",maker:""}); renderNRI(); }
 async function saveNewResult(btn){
   const subject=$("nrs_subject").value.trim();
-  if(!subject){ $("nrs_err").textContent="件名は必須です"; nrTab("basic"); return; }
+  if(!subject){ $("nrs_err").textContent="件名は必須です"; return; }
   btn.disabled=true;
   const maxNo=RESULTS.reduce((m,r)=>Math.max(m, r.result_no||0), 0);
   const judg=$("nrs_judg").value;
