@@ -534,7 +534,7 @@ function openRequest(id){
         <div class="row"><span class="k">依頼日 / 期日</span><span>${esc(r.request_date||"—")} ／ ${esc(r.due_date||"—")}</span></div>
       </div>
       <div style="font-weight:600;margin:14px 0 8px">資材</div>
-      ${items.length?`<div class="card"><table><thead><tr><th>種別</th><th>品名・型番</th><th>手配先</th></tr></thead><tbody>
+      ${items.length?`<div class="card"><table><thead><tr><th>種別</th><th>品番</th><th>メーカー</th></tr></thead><tbody>
         ${items.map(i=>`<tr><td class="muted">${esc(i.kind)}</td><td>${esc(i.material||"")}</td><td class="muted">${esc(i.supplier||"")}</td></tr>`).join("")}</tbody></table></div>`:`<div class="muted">資材の登録はありません</div>`}
       <div style="font-weight:600;margin:16px 0 8px">この依頼の試験結果</div>
       ${linked.length?linked.map(x=>`<div class="ver" style="cursor:pointer" onclick="openResult('${esc(x.id)}')"><div style="flex:1">NO.${esc(x.result_no??"")} ${esc(x.subject)}</div>${x.status==="検査中"?tStatusBadge("検査中"):jBadge(x.judgment)}</div>`).join(""):`<div class="note">まだ結果が登録されていません（試験未実施）。</div>`}
@@ -567,34 +567,59 @@ async function saveRequestEdit(id,btn){
   if(error){ $("eq_err").textContent="保存できません："+error.message; btn.disabled=false; return; }
   btn.closest(".modal-bg").remove(); await reopenRequest(id);
 }
+function nextRequestNo(){
+  const parsed = REQUESTS.map(r=>{ const m=/^(.+)-(\d+)$/.exec(r.request_no||""); return m?{prefix:m[1],n:parseInt(m[2],10),date:r.request_date||""}:null; }).filter(Boolean);
+  if(!parsed.length) return "40-1";
+  parsed.sort((a,b)=> (b.date||"").localeCompare(a.date||"") || (b.n-a.n));
+  const prefix=parsed[0].prefix;
+  let maxN=Math.max(...parsed.filter(p=>p.prefix===prefix).map(p=>p.n));
+  const exist=new Set(REQUESTS.map(r=>r.request_no));
+  let cand=`${prefix}-${maxN+1}`;
+  while(exist.has(cand)){ maxN++; cand=`${prefix}-${maxN+1}`; }
+  return cand;
+}
 function newRequestModal(){
+  NRI=[{kind:"容器",custom:"",part_no:"",maker:""}];
+  const autoNo=nextRequestNo();
   modal(`<h3>新規依頼を起票</h3><div class="body">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>依頼番号 *</label><input id="nr_no" placeholder="例：40-9"></div>
-      <div><label>依頼日</label><input id="nr_date" value="${TODAY}"></div></div>
-    <label>依頼内容 *</label><input id="nr_content">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>対象物</label><input id="nr_target"></div>
-      <div><label>期日</label><input id="nr_due" placeholder="2026-06-30"></div></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>製品名</label><input id="nr_product"></div>
-      <div><label>ロットNo.</label><input id="nr_lot"></div></div>
-    <div class="err" id="nr_err"></div></div>
+    <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line)">
+      <button type="button" id="nrtab_basic" class="btn btn-ghost" style="border:none;border-radius:0;border-bottom:2px solid var(--green);color:var(--ink)" onclick="nrTab('basic')">基本情報</button>
+      <button type="button" id="nrtab_mat" class="btn btn-ghost" style="border:none;border-radius:0;border-bottom:2px solid transparent" onclick="nrTab('mat')">資材情報</button>
+    </div>
+    <div id="nrp_basic">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>依頼番号（自動採番）</label><input id="nq_no" value="${esc(autoNo)}" readonly style="background:#f1f5f9;color:var(--sub)"></div>
+        <div><label>依頼日</label><input id="nq_date" value="${TODAY}"></div></div>
+      <label>依頼内容 *</label><input id="nq_content">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>対象物</label><input id="nq_target"></div>
+        <div><label>期日</label><input id="nq_due" placeholder="2026-06-30"></div></div>
+    </div>
+    <div id="nrp_mat" style="display:none">
+      <div class="muted" style="margin-bottom:8px">資材の種別・品番・メーカーを入力します。</div>
+      <div id="nri_list"></div>
+      <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addNRI()">＋ 資材を追加</button>
+    </div>
+    <div class="err" id="nq_err"></div></div>
     <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
     <button class="btn btn-pri" onclick="saveRequest(this)">起票する</button></div>`);
+  renderNRI();
 }
 async function saveRequest(btn){
-  const no=$("nr_no").value.trim(), content=$("nr_content").value.trim();
-  if(!no||!content){ $("nr_err").textContent="依頼番号と依頼内容は必須です"; return; }
+  const content=$("nq_content").value.trim();
+  if(!content){ $("nq_err").textContent="依頼内容は必須です"; nrTab("basic"); return; }
   btn.disabled=true;
-  const { error } = await db.from("test_requests").insert({
-    request_no:no, request_date:$("nr_date").value.trim()||null, due_date:$("nr_due").value.trim()||null,
-    request_content:content, target:$("nr_target").value.trim(), product_name:$("nr_product").value.trim(), lot_no:$("nr_lot").value.trim()
-  });
-  if(error){ $("nr_err").textContent="起票できません："+error.message; btn.disabled=false; return; }
+  const no=nextRequestNo();
+  const { data, error } = await db.from("test_requests").insert({
+    request_no:no, request_date:$("nq_date").value.trim()||null, due_date:$("nq_due").value.trim()||null,
+    request_content:content, target:$("nq_target").value.trim()
+  }).select().single();
+  if(error){ $("nq_err").textContent="起票できません："+error.message; btn.disabled=false; return; }
+  const items=NRI.map(it=>({ request_id:data.id, kind:(it.kind==="その他"?(it.custom.trim()||"その他"):it.kind), material:it.part_no.trim()||null, supplier:it.maker.trim()||null }))
+                 .filter(it=>it.material||it.supplier);
+  if(items.length){ const r2=await db.from("test_request_items").insert(items); if(r2.error){ alert("資材情報の保存に一部失敗："+r2.error.message); } }
   btn.closest(".modal-bg").remove(); await loadTests();
 }
-
 
 const MAT_KINDS=["容器","キャップ","ポンプ","中栓","個箱","シュリンク","ラベル","その他"];
 let NRI=[];
