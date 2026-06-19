@@ -320,7 +320,7 @@ function addMonths(iso,n){ const d=new Date(iso||TODAY); if(isNaN(d)) return nul
 async function loadTests(){
   $("view").innerHTML=`<p class="muted">読み込み中…</p>`;
   const [r1,r2]=await Promise.all([
-    db.from("test_results").select("*, test_checkpoints(*)").order("report_date",{ascending:false,nullsFirst:false}),
+    db.from("test_results").select("*, test_checkpoints(*), test_result_items(*)").order("report_date",{ascending:false,nullsFirst:false}),
     db.from("test_requests").select("*, test_request_items(*)").order("request_date",{ascending:false,nullsFirst:false})
   ]);
   if(r1.error||r2.error){ $("view").innerHTML=`<div class="note">読み込みエラー：${esc((r1.error||r2.error).message)}</div>`; return; }
@@ -412,6 +412,10 @@ function openResult(id){
         <div class="row"><span class="k">考察</span><span>${esc(r.discussion||"")}</span></div>
         <div class="row"><span class="k">添付資料</span><span>${esc(r.attachments||"")}</span></div>
       </div>
+      ${(r.test_result_items&&r.test_result_items.length)?`<div style="margin-top:12px"><div style="font-weight:600;margin-bottom:6px">資材情報</div>
+        <div class="card"><table><thead><tr><th>種別</th><th>品番</th><th>メーカー</th></tr></thead><tbody>
+        ${r.test_result_items.map(it=>`<tr><td class="muted">${esc(it.kind||"")}</td><td>${esc(it.part_no||"")}</td><td class="muted">${esc(it.maker||"")}</td></tr>`).join("")}
+        </tbody></table></div></div>`:""}
     </div>
     <div class="detail" style="margin-top:14px">
       <div style="font-weight:600;margin-bottom:10px">経過観察 / チェックポイント</div>
@@ -592,29 +596,70 @@ async function saveRequest(btn){
 }
 
 
+const MAT_KINDS=["容器","キャップ","ポンプ","中栓","個箱","シュリンク","ラベル","その他"];
+let NRI=[];
+function mapReqKind(k){ return MAT_KINDS.includes(k)?k:"その他"; }
 function newResultModal(reqNo){
   const req = reqNo ? REQUESTS.find(x=>x.request_no===reqNo) : null;
+  NRI = (req && req.test_request_items && req.test_request_items.length)
+    ? req.test_request_items.map(it=>({ kind:mapReqKind(it.kind), custom:(MAT_KINDS.includes(it.kind)?"":it.kind), part_no:it.material||"", maker:it.supplier||"" }))
+    : [{ kind:"容器", custom:"", part_no:"", maker:"" }];
   modal(`<h3>新規結果を入力</h3><div class="body">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>依頼番号</label><input id="nrs_req" value="${esc(reqNo||"")}" placeholder="例：40-9"></div>
-      <div><label>報告日</label><input id="nrs_date" value="${TODAY}"></div></div>
-    <label>件名 *</label><input id="nrs_subject" value="${esc(req?req.request_content:"")}">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label>作成者</label><input id="nrs_author" value="${esc(ME.email)}"></div>
-      <div><label>状態</label><select id="nrs_status"><option>検査中</option><option>完了</option></select></div></div>
-    <label>実施日</label><input id="nrs_period" placeholder="例：2026/06/10-06/17">
-    <label>試験品</label><textarea id="nrs_sample" rows="2"></textarea>
-    <label>試験方法</label><textarea id="nrs_method" rows="2"></textarea>
-    <label>結果</label><textarea id="nrs_result" rows="2"></textarea>
-    <label>考察</label><textarea id="nrs_disc" rows="2"></textarea>
-    <label>判定</label><select id="nrs_judg"><option value="">未判定</option><option>適</option><option>不適</option></select>
+    <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line)">
+      <button type="button" id="nrtab_basic" class="btn btn-ghost" style="border:none;border-radius:0;border-bottom:2px solid var(--green);color:var(--ink)" onclick="nrTab('basic')">基本情報</button>
+      <button type="button" id="nrtab_mat" class="btn btn-ghost" style="border:none;border-radius:0;border-bottom:2px solid transparent" onclick="nrTab('mat')">資材情報</button>
+    </div>
+    <div id="nrp_basic">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>依頼番号</label><input id="nrs_req" value="${esc(reqNo||"")}" placeholder="例：40-9"></div>
+        <div><label>報告日</label><input id="nrs_date" value="${TODAY}"></div></div>
+      <label>件名 *</label><input id="nrs_subject" value="${esc(req?req.request_content:"")}">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>作成者</label><input id="nrs_author" value="${esc(ME.email)}"></div>
+        <div><label>状態</label><select id="nrs_status"><option>検査中</option><option>完了</option></select></div></div>
+      <label>実施日</label><input id="nrs_period" placeholder="例：2026/06/10-06/17">
+      <label>試験品</label><textarea id="nrs_sample" rows="2"></textarea>
+      <label>試験方法</label><textarea id="nrs_method" rows="2"></textarea>
+      <label>結果</label><textarea id="nrs_result" rows="2"></textarea>
+      <label>考察</label><textarea id="nrs_disc" rows="2"></textarea>
+      <label>判定</label><select id="nrs_judg"><option value="">未判定</option><option>適</option><option>不適</option></select>
+    </div>
+    <div id="nrp_mat" style="display:none">
+      <div class="muted" style="margin-bottom:8px">試験する資材の種別・品番・メーカーを入力します。</div>
+      <div id="nri_list"></div>
+      <button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addNRI()">＋ 資材を追加</button>
+    </div>
     <div class="err" id="nrs_err"></div></div>
     <div class="foot"><button class="btn btn-ghost" onclick="this.closest('.modal-bg').remove()">キャンセル</button>
     <button class="btn btn-pri" onclick="saveNewResult(this)">結果を登録</button></div>`);
+  renderNRI();
 }
+function nrTab(name){
+  const b=$("nrp_basic"), m=$("nrp_mat"), tb=$("nrtab_basic"), tm=$("nrtab_mat");
+  const on = name==="mat";
+  b.style.display=on?"none":"block"; m.style.display=on?"block":"none";
+  tb.style.borderBottom=on?"2px solid transparent":"2px solid var(--green)";
+  tm.style.borderBottom=on?"2px solid var(--green)":"2px solid transparent";
+  tb.style.color=on?"var(--sub)":"var(--ink)"; tm.style.color=on?"var(--ink)":"var(--sub)";
+}
+function renderNRI(){
+  const el=$("nri_list"); if(!el)return;
+  el.innerHTML = NRI.map((it,idx)=>`
+    <div style="display:grid;grid-template-columns:7.5rem 1fr 1fr 2rem;gap:6px;align-items:center;margin-bottom:6px">
+      <select onchange="setNRI(${idx},'kind',this.value)">${MAT_KINDS.map(k=>`<option ${it.kind===k?"selected":""}>${k}</option>`).join("")}</select>
+      <input placeholder="品番" value="${esc(it.part_no||"")}" oninput="setNRI(${idx},'part_no',this.value)">
+      <input placeholder="メーカー" value="${esc(it.maker||"")}" oninput="setNRI(${idx},'maker',this.value)">
+      <button type="button" class="btn btn-ghost" style="padding:4px 8px" onclick="delNRI(${idx})">✕</button>
+    </div>
+    ${it.kind==="その他"?`<div style="margin:-2px 0 8px 0"><input placeholder="種別（自由入力）" value="${esc(it.custom||"")}" oninput="setNRI(${idx},'custom',this.value)"></div>`:""}
+  `).join("");
+}
+function setNRI(idx,field,val){ NRI[idx][field]=val; if(field==="kind") renderNRI(); }
+function addNRI(){ NRI.push({kind:"容器",custom:"",part_no:"",maker:""}); renderNRI(); }
+function delNRI(idx){ NRI.splice(idx,1); if(NRI.length===0) NRI.push({kind:"容器",custom:"",part_no:"",maker:""}); renderNRI(); }
 async function saveNewResult(btn){
   const subject=$("nrs_subject").value.trim();
-  if(!subject){ $("nrs_err").textContent="件名は必須です"; return; }
+  if(!subject){ $("nrs_err").textContent="件名は必須です"; nrTab("basic"); return; }
   btn.disabled=true;
   const maxNo=RESULTS.reduce((m,r)=>Math.max(m, r.result_no||0), 0);
   const judg=$("nrs_judg").value;
@@ -625,6 +670,9 @@ async function saveNewResult(btn){
     result:$("nrs_result").value.trim(), discussion:$("nrs_disc").value.trim(), judgment:judg||null
   }).select().single();
   if(error){ $("nrs_err").textContent="登録できません："+error.message; btn.disabled=false; return; }
+  const items=NRI.map(it=>({ result_id:data.id, kind:(it.kind==="その他"?(it.custom.trim()||"その他"):it.kind), part_no:it.part_no.trim()||null, maker:it.maker.trim()||null }))
+                 .filter(it=>it.part_no||it.maker);
+  if(items.length){ const r2=await db.from("test_result_items").insert(items); if(r2.error){ alert("資材情報の保存に一部失敗："+r2.error.message); } }
   btn.closest(".modal-bg").remove(); await loadTests(); openResult(data.id);
 }
 
